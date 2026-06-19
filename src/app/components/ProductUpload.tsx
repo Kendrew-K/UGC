@@ -13,7 +13,11 @@ export function ProductUpload() {
     setError(null);
     setResult(null);
     try {
-      const b64 = Buffer.from(await file.arrayBuffer()).toString('base64');
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      const b64 = btoa(binary);
       const res = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

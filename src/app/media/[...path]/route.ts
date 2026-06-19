@@ -12,7 +12,6 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
-  '.sqlite': 'application/octet-stream',
 };
 
 export async function GET(

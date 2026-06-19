@@ -13,8 +13,8 @@ export default function ReadyPage() {
           <p style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>Job #{j.id}</p>
           {j.output_path && (
             <>
-              <video src={'/media/' + j.output_path} controls width={320} style={{ display: 'block', marginBottom: '0.5rem' }} />
-              <a href={'/media/' + j.output_path} download style={{ color: '#0070f3' }}>Download</a>
+              <video src={'/' + j.output_path} controls width={320} style={{ display: 'block', marginBottom: '0.5rem' }} />
+              <a href={'/' + j.output_path} download style={{ color: '#0070f3' }}>Download</a>
             </>
           )}
         </article>
