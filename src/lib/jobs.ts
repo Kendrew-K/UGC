@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 
-export type JobStatus = 'queued' | 'scraping' | 'swapping' | 'processing' | 'ready' | 'failed';
+export type JobStatus = 'queued' | 'scraping' | 'swapping' | 'ready' | 'failed';
 
 export interface PipelineSteps {
   scrape(): Promise<{ sourcePath: string; candidates: unknown[] }>;

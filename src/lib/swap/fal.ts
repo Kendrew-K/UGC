@@ -12,7 +12,6 @@ export const falProvider: SwapProvider = {
     const { status_url } = (await res.json()) as { status_url: string };
     // Poll until completed.
     for (;;) {
-      await new Promise((r) => setTimeout(r, 4000));
       const s = await fetch(status_url, { headers: { Authorization: `Key ${process.env.FAL_KEY}` } });
       const body = (await s.json()) as { status: string; response_url?: string };
       if (body.status === 'COMPLETED' && body.response_url) {
@@ -22,6 +21,7 @@ export const falProvider: SwapProvider = {
         return data.video.url;
       }
       if (body.status === 'FAILED') throw new Error('fal job failed');
+      await new Promise((r) => setTimeout(r, 4000));
     }
   },
 };

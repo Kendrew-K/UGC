@@ -10,8 +10,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // Face source is supplied per-advance via POST /api/jobs/{id}/advance
   const { productId, count, answers } = (await req.json()) as {
-    productId: number; count: number; faceSource: unknown; answers?: Record<string, unknown>;
+    productId: number; count: number; answers?: Record<string, unknown>;
   };
   const db = getDb();
   const product = db.prepare('SELECT type FROM products WHERE id = ?').get(productId) as { type: string } | undefined;

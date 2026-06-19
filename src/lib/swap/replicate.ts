@@ -17,12 +17,16 @@ export const replicateProvider: SwapProvider = {
     });
     if (!res.ok) throw new Error(`replicate submit failed: ${res.status}`);
     let pred = (await res.json()) as { status: string; output?: string | string[]; urls?: { get: string } };
+    if (!pred.urls?.get && pred.status !== 'succeeded' && pred.status !== 'failed') {
+      throw new Error('replicate: no poll URL in initial response');
+    }
     while (pred.status !== 'succeeded' && pred.status !== 'failed') {
-      await new Promise((r) => setTimeout(r, 4000));
-      const s = await fetch(pred.urls!.get, {
+      if (!pred.urls?.get) throw new Error('replicate: poll URL disappeared');
+      const s = await fetch(pred.urls?.get ?? '', {
         headers: { Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}` },
       });
       pred = (await s.json()) as typeof pred;
+      await new Promise((r) => setTimeout(r, 4000));
     }
     if (pred.status === 'failed') throw new Error('replicate job failed');
     const out = Array.isArray(pred.output) ? pred.output[0] : pred.output;

@@ -34,7 +34,7 @@ export function buildSteps(args: {
   const d: PipelineDeps = {
     find: args.deps?.find ?? findViralVideos,
     download: args.deps?.download ?? downloadTo,
-    swap: args.deps?.swap ?? getSwapProvider().swap,
+    swap: args.deps?.swap ?? ((input) => getSwapProvider().swap(input)),
     process: args.deps?.process ?? distinctify,
     // v1 passthrough — see PipelineDeps.uploadForUrl JSDoc above
     uploadForUrl: args.deps?.uploadForUrl ?? (async (p) => p),
