@@ -1,8 +1,35 @@
-import { findViralVideos } from './scraper';
+import fs from 'node:fs';
+import path from 'node:path';
+import { findViralVideos, type Candidate } from './scraper';
 import { downloadTo } from './download';
 import { getSwapProvider } from './swap';
 import { distinctify } from './postprocess';
+import { resolveFace } from './face';
 import type { PipelineSteps } from './jobs';
+
+/**
+ * Upload a local file to fal's storage CDN and return a publicly-reachable URL,
+ * so WAN-based swap providers can fetch the source video and face image.
+ */
+async function falUpload(localPath: string): Promise<string> {
+  const data = fs.readFileSync(localPath);
+  const fileName = path.basename(localPath);
+  const contentType = fileName.endsWith('.mp4')
+    ? 'video/mp4'
+    : fileName.endsWith('.png')
+      ? 'image/png'
+      : 'image/jpeg';
+  const initRes = await fetch('https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn', {
+    method: 'POST',
+    headers: { Authorization: `Key ${process.env.FAL_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content_type: contentType, file_name: fileName }),
+  });
+  if (!initRes.ok) throw new Error(`fal upload initiate failed: ${initRes.status}`);
+  const { upload_url, file_url } = (await initRes.json()) as { upload_url: string; file_url: string };
+  const putRes = await fetch(upload_url, { method: 'PUT', headers: { 'Content-Type': contentType }, body: data });
+  if (!putRes.ok) throw new Error(`fal upload PUT failed: ${putRes.status}`);
+  return file_url;
+}
 
 export interface PipelineDeps {
   find: typeof findViralVideos;
@@ -15,14 +42,11 @@ export interface PipelineDeps {
   process: typeof distinctify;
   /**
    * Converts a local file path to a publicly-reachable URL so that WAN-based
-   * swap providers can fetch it.
-   *
-   * Default (v1): passthrough — returns the path unchanged. This is intentional
-   * for local development and unit tests. Before the live pipeline works
-   * end-to-end, this must be replaced with a real upload (e.g. fal/Replicate
-   * file-upload endpoint or a signed temporary host). Flagged for Task 14.
+   * swap providers can fetch it. Defaults to uploading to fal's storage CDN.
    */
   uploadForUrl: (localPath: string) => Promise<string>;
+  /** Generate an AI avatar image from a text prompt and save it to destPath. */
+  generateFace: typeof resolveFace;
 }
 
 export function buildSteps(args: {
@@ -36,18 +60,24 @@ export function buildSteps(args: {
     download: args.deps?.download ?? downloadTo,
     swap: args.deps?.swap ?? ((input) => getSwapProvider().swap(input)),
     process: args.deps?.process ?? distinctify,
-    // v1 passthrough — see PipelineDeps.uploadForUrl JSDoc above
-    uploadForUrl: args.deps?.uploadForUrl ?? (async (p) => p),
+    uploadForUrl: args.deps?.uploadForUrl ?? falUpload,
+    generateFace: args.deps?.generateFace ?? resolveFace,
   };
   const dir = `media/jobs/${args.jobId}`;
 
   return {
-    async scrape() {
-      const candidates = await d.find(args.keywords);
-      if (candidates.length === 0) throw new Error('No viral candidates found');
+    async generateFace(prompt: string, destPath: string) {
+      return d.generateFace({ kind: 'generate', prompt }, destPath);
+    },
+
+    async findCandidates() {
+      return d.find(args.keywords);
+    },
+
+    async prepareSource(chosen: Candidate) {
       const sourcePath = `${dir}/source.mp4`;
-      await d.download(candidates[0].downloadUrl, sourcePath);
-      return { sourcePath, candidates };
+      await d.download(chosen.downloadUrl, sourcePath);
+      return sourcePath;
     },
 
     async swap(sourcePath: string) {

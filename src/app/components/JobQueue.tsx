@@ -1,28 +1,40 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+type Candidate = {
+  url: string;
+  views: number;
+  downloadUrl: string;
+  hasVoice: boolean;
+  platform: string;
+};
 
 type Job = {
   id: number;
   status: string;
   product_id: number;
   error?: string | null;
+  candidates_json?: string | null;
+  output_path?: string | null;
   created_at: string;
   updated_at: string;
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: '#888',
-  classifying: '#2196F3',
-  scripting: '#9C27B0',
-  rendering: '#FF9800',
-  postprocessing: '#00BCD4',
-  ready: '#4CAF50',
-  failed: '#F44336',
+const STATUS_META: Record<string, { color: string; label: string }> = {
+  queued: { color: '#888', label: 'Queued' },
+  awaiting_approval: { color: '#2196F3', label: 'Pick a clip ↓' },
+  downloading: { color: '#FF9800', label: 'Downloading clip' },
+  swapping: { color: '#9C27B0', label: 'Face-swapping video' },
+  processing: { color: '#00BCD4', label: 'Finishing up' },
+  ready: { color: '#4CAF50', label: 'Ready to post 🎉' },
+  failed: { color: '#F44336', label: 'Failed' },
 };
+
+const AUTO_STATUSES = new Set(['queued', 'downloading', 'swapping', 'processing']);
 
 export function JobQueue() {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [advancing, setAdvancing] = useState<number | null>(null);
+  const advancing = useRef<Set<number>>(new Set());
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -37,59 +49,94 @@ export function JobQueue() {
 
   useEffect(() => {
     fetchJobs();
-    const interval = setInterval(fetchJobs, 4000);
+    const interval = setInterval(fetchJobs, 3000);
     return () => clearInterval(interval);
   }, [fetchJobs]);
 
-  async function advanceJob(id: number) {
-    setAdvancing(id);
-    try {
-      await fetch(`/api/jobs/${id}/advance`, { method: 'POST' });
-      await fetchJobs();
-    } finally {
-      setAdvancing(null);
+  // Auto-advance any job that doesn't need human input.
+  useEffect(() => {
+    for (const job of jobs) {
+      if (!AUTO_STATUSES.has(job.status)) continue;
+      if (advancing.current.has(job.id)) continue;
+      advancing.current.add(job.id);
+      (async () => {
+        try {
+          await fetch(`/api/jobs/${job.id}/advance`, { method: 'POST' });
+          await fetchJobs();
+        } finally {
+          advancing.current.delete(job.id);
+        }
+      })();
     }
+  }, [jobs, fetchJobs]);
+
+  async function approve(jobId: number, chosenIndex: number) {
+    await fetch(`/api/jobs/${jobId}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chosenIndex }),
+    });
+    await fetchJobs();
   }
 
   return (
-    <section style={{ padding: '1.5rem', border: '1px solid #ddd', borderRadius: '8px' }}>
+    <section style={{ padding: '1.5rem', border: '1px solid #ddd', borderRadius: '8px', color: '#171717' }}>
       <h2 style={{ marginTop: 0 }}>Job Queue</h2>
       {jobs.length === 0 && <p style={{ color: '#888' }}>No jobs yet. Upload a product to create one.</p>}
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-        {jobs.map((job) => (
-          <li key={job.id} style={{ padding: '0.75rem', marginBottom: '0.5rem', background: '#fafafa', borderRadius: '6px', border: '1px solid #eee' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-              <span style={{ fontWeight: 600 }}>Job #{job.id}</span>
-              <span style={{
-                padding: '2px 8px',
-                borderRadius: '4px',
-                background: STATUS_COLORS[job.status] ?? '#888',
-                color: '#fff',
-                fontSize: '0.8rem',
-                fontWeight: 600,
-              }}>
-                {job.status}
-              </span>
-              {job.status !== 'ready' && (
-                <button
-                  onClick={() => advanceJob(job.id)}
-                  disabled={advancing === job.id}
-                  style={{ padding: '4px 12px', cursor: advancing === job.id ? 'not-allowed' : 'pointer' }}
-                >
-                  {job.status === 'failed' ? 'Retry' : 'Advance'}
-                </button>
+        {jobs.map((job) => {
+          const candidates: Candidate[] = job.candidates_json ? JSON.parse(job.candidates_json) : [];
+          return (
+            <li key={job.id} style={{ padding: '0.75rem', marginBottom: '0.5rem', background: '#fafafa', borderRadius: '6px', border: '1px solid #eee' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 600 }}>Job #{job.id}</span>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  background: STATUS_META[job.status]?.color ?? '#888',
+                  color: '#fff',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                }}>
+                  {STATUS_META[job.status]?.label ?? job.status}
+                </span>
+                {AUTO_STATUSES.has(job.status) && <span style={{ fontSize: '0.8rem', color: '#888' }}>working…</span>}
+                {job.status === 'ready' && job.output_path && (
+                  <a href="/ready" style={{ color: '#0070f3', fontWeight: 600, fontSize: '0.85rem' }}>View →</a>
+                )}
+              </div>
+
+              {job.status === 'awaiting_approval' && (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <p style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>Choose a viral clip to base the video on:</p>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {candidates.slice(0, 6).map((c, i) => (
+                      <li key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <button
+                          onClick={() => approve(job.id, i)}
+                          style={{ padding: '4px 12px', cursor: 'pointer', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '4px' }}
+                        >
+                          Use this
+                        </button>
+                        <span style={{ fontSize: '0.85rem' }}>
+                          {c.views.toLocaleString()} views · {c.platform}
+                        </span>
+                        <a href={c.url} target="_blank" rel="noreferrer" style={{ color: '#0070f3', fontSize: '0.8rem' }}>preview</a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
-            </div>
-            {job.error && (
-              <p style={{ color: 'red', margin: '0.5rem 0 0', fontSize: '0.85rem' }}>
-                Error: {job.error}
+
+              {job.error && (
+                <p style={{ color: 'red', margin: '0.5rem 0 0', fontSize: '0.85rem' }}>Error: {job.error}</p>
+              )}
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#aaa' }}>
+                Updated: {new Date(job.updated_at).toLocaleString()}
               </p>
-            )}
-            <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#aaa' }}>
-              Updated: {new Date(job.updated_at).toLocaleString()}
-            </p>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

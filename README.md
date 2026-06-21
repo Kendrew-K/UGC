@@ -37,17 +37,12 @@ ANTHROPIC_API_KEY=your-key-here
 # Apify (for scraping viral TikTok/Reels videos)
 APIFY_TOKEN=your-key-here
 
-# Face-swap provider (choose one)
-# Option 1: FAL (default, recommended)
+# Face-swap provider (fal.ai, recommended)
 FAL_KEY=your-key-here
 SWAP_PROVIDER=fal
 
-# Option 2: Replicate
-# REPLICATE_API_TOKEN=your-key-here
-# SWAP_PROVIDER=replicate
-
-# Video distinctiveness (optional)
-BANANA_PRO_API_KEY=your-key-here
+# AI avatar generation (KIE.AI — used when client chooses "generate" face)
+KIE_API_KEY=your-key-here
 ```
 
 ### 3. Install Dependencies

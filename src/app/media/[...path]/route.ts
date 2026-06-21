@@ -16,9 +16,9 @@ const MIME: Record<string, string> = {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
-  const segments = params.path ?? [];
+  const segments = (await params).path ?? [];
 
   // Reject path traversal
   if (segments.some((s) => s === '..' || s.includes('..') || s.includes('\0'))) {

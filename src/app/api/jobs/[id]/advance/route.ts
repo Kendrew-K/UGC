@@ -2,12 +2,11 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { advanceJob } from '@/lib/jobs';
 import { buildSteps } from '@/lib/pipeline';
-import { resolveFace, type FaceSpec } from '@/lib/face';
 
 interface JobRow { product_id: number; face_image_path: string | null }
 interface ProductRow { type: string; keywords_json: string }
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const jobId = Number(id);
   const db = getDb();
@@ -16,11 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(job.product_id) as ProductRow | undefined;
   if (!product) return NextResponse.json({ error: 'product not found' }, { status: 404 });
   const keywords = JSON.parse(product.keywords_json ?? '[]');
-  const body = (await req.json().catch(() => ({}))) as { faceSource?: FaceSpec };
-  const faceImagePath = body.faceSource
-    ? await resolveFace(body.faceSource, `media/jobs/${jobId}/face.jpg`)
-    : (job.face_image_path ?? 'media/jobs/' + jobId + '/face.jpg');
-  const steps = buildSteps({ keywords, faceImagePath, jobId });
+  const steps = buildSteps({ keywords, faceImagePath: job.face_image_path ?? '', jobId });
   const status = await advanceJob(db, jobId, steps);
   return NextResponse.json({ status });
 }

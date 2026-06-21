@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   output_path TEXT,
   error TEXT,
   candidates_json TEXT,
+  chosen_candidate_json TEXT,
+  face_prompt TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

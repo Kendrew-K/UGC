@@ -30,11 +30,57 @@ describe('jobs route', () => {
     const create = new Request('http://localhost/api/jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productId, count: 3, faceSource: { kind: 'upload', path: 'media/f.jpg' }, answers: { vibe: 'GRWM' } }),
+      body: JSON.stringify({ productId, count: 3, faceImageBase64: Buffer.from('fake-jpeg').toString('base64'), answers: { vibe: 'GRWM' } }),
     });
     const created = await (await POST(create)).json();
     expect(created.jobIds).toHaveLength(3);
     const listed = await (await GET()).json();
     expect(listed.jobs.length).toBeGreaterThanOrEqual(3);
+    // Each job should have its face photo persisted.
+    const row = db.prepare('SELECT face_image_path FROM jobs WHERE id = ?').get(created.jobIds[0]) as any;
+    expect(row.face_image_path).toContain('face.jpg');
+  });
+
+  it('creates a generating_face job when facePrompt is supplied', async () => {
+    const { getDb } = await import('@/lib/db');
+    const db = getDb();
+    const client = db.prepare('INSERT INTO clients (name) VALUES (?)').run('Prompt Client');
+    const product = db
+      .prepare("INSERT INTO products (client_id, type, industry, keywords_json) VALUES (?, 'fashion', 'clothing', '[]')")
+      .run(client.lastInsertRowid);
+    const productId = Number(product.lastInsertRowid);
+
+    const req = new Request('http://localhost/api/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productId, facePrompt: 'young woman, studio lighting' }),
+    });
+    const res = await (await POST(req)).json();
+    expect(res.jobIds).toHaveLength(1);
+    const row = db.prepare('SELECT status, face_prompt FROM jobs WHERE id = ?').get(res.jobIds[0]) as any;
+    expect(row.status).toBe('generating_face');
+    expect(row.face_prompt).toBe('young woman, studio lighting');
+  });
+
+  it('rejects requests with neither faceImageBase64 nor facePrompt', async () => {
+    const { getDb } = await import('@/lib/db');
+    const db = getDb();
+    const client = db.prepare('INSERT INTO clients (name) VALUES (?)').run('No Face Client');
+    const product = db
+      .prepare("INSERT INTO products (client_id, type, industry, keywords_json) VALUES (?, 'skincare', 'beauty', '[]')")
+      .run(client.lastInsertRowid);
+    const req = new Request('http://localhost/api/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productId: Number(product.lastInsertRowid) }),
+    });
+    const response = await POST(req);
+    expect(response.status).toBe(400);
+    const data = await response.json();
+    expect(data.error).toMatch(/face/i);
+  });
+
+  afterAll(() => {
+    try { fs.rmSync('media/jobs', { recursive: true, force: true }); } catch {}
   });
 });

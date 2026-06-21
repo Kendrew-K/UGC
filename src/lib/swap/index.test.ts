@@ -12,6 +12,11 @@ describe('getSwapProvider', () => {
     expect(typeof p.swap).toBe('function');
   });
 
+  it('returns a kie provider by name', () => {
+    const p = getSwapProvider('kie');
+    expect(typeof p.swap).toBe('function');
+  });
+
   it('throws on unknown provider', () => {
     expect(() => getSwapProvider('bogus')).toThrow();
   });
