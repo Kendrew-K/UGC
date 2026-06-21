@@ -12,8 +12,17 @@ export async function POST(req: Request) {
     const remembered = getMemory(db, classification.type);
     const client = db.prepare('INSERT INTO clients (name) VALUES (?)').run(clientName ?? 'Client');
     const product = db
-      .prepare('INSERT INTO products (client_id, type, industry, keywords_json) VALUES (?, ?, ?, ?)')
-      .run(client.lastInsertRowid, classification.type, classification.industry, JSON.stringify(classification.keywords));
+      .prepare(
+        'INSERT INTO products (client_id, type, industry, gender, keywords_json, search_queries_json) VALUES (?, ?, ?, ?, ?, ?)'
+      )
+      .run(
+        client.lastInsertRowid,
+        classification.type,
+        classification.industry,
+        classification.gender,
+        JSON.stringify(classification.keywords),
+        JSON.stringify(classification.searchQueries)
+      );
     return NextResponse.json({ productId: Number(product.lastInsertRowid), classification, remembered });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

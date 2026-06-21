@@ -15,8 +15,13 @@ export function getDb(dbPath = process.env.UGC_DB_PATH ?? 'media/app.sqlite'): D
 
 /** Idempotent migrations for databases created before a column was added. */
 function migrate(db: Database.Database) {
-  const cols = db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[];
-  const has = (name: string) => cols.some((c) => c.name === name);
-  if (!has('chosen_candidate_json')) db.exec('ALTER TABLE jobs ADD COLUMN chosen_candidate_json TEXT');
-  if (!has('face_prompt')) db.exec('ALTER TABLE jobs ADD COLUMN face_prompt TEXT');
+  const jobCols = db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[];
+  const hasJob = (name: string) => jobCols.some((c) => c.name === name);
+  if (!hasJob('chosen_candidate_json')) db.exec('ALTER TABLE jobs ADD COLUMN chosen_candidate_json TEXT');
+  if (!hasJob('face_prompt')) db.exec('ALTER TABLE jobs ADD COLUMN face_prompt TEXT');
+
+  const prodCols = db.prepare('PRAGMA table_info(products)').all() as { name: string }[];
+  const hasProd = (name: string) => prodCols.some((c) => c.name === name);
+  if (!hasProd('gender')) db.exec('ALTER TABLE products ADD COLUMN gender TEXT');
+  if (!hasProd('search_queries_json')) db.exec('ALTER TABLE products ADD COLUMN search_queries_json TEXT');
 }

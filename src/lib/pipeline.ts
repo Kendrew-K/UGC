@@ -5,12 +5,10 @@ import { downloadTo } from './download';
 import { getSwapProvider } from './swap';
 import { distinctify } from './postprocess';
 import { resolveFace } from './face';
+import { rankCandidates } from './evaluator';
 import type { PipelineSteps } from './jobs';
+import type { Classification } from './classifier';
 
-/**
- * Upload a local file to fal's storage CDN and return a publicly-reachable URL,
- * so WAN-based swap providers can fetch the source video and face image.
- */
 async function falUpload(localPath: string): Promise<string> {
   const data = fs.readFileSync(localPath);
   const fileName = path.basename(localPath);
@@ -19,7 +17,7 @@ async function falUpload(localPath: string): Promise<string> {
     : fileName.endsWith('.png')
       ? 'image/png'
       : 'image/jpeg';
-  const initRes = await fetch('https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn', {
+  const initRes = await fetch('https://rest.fal.run/storage/upload/initiate?storage_type=fal-cdn', {
     method: 'POST',
     headers: { Authorization: `Key ${process.env.FAL_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ content_type: contentType, file_name: fileName }),
@@ -34,25 +32,18 @@ async function falUpload(localPath: string): Promise<string> {
 export interface PipelineDeps {
   find: typeof findViralVideos;
   download: typeof downloadTo;
-  /**
-   * Calls a swap provider. Receives publicly-reachable URLs for the source
-   * video and face image, returns a remote URL for the swapped result.
-   */
   swap: (input: { videoUrl: string; imageUrl: string }) => Promise<string>;
   process: typeof distinctify;
-  /**
-   * Converts a local file path to a publicly-reachable URL so that WAN-based
-   * swap providers can fetch it. Defaults to uploading to fal's storage CDN.
-   */
   uploadForUrl: (localPath: string) => Promise<string>;
-  /** Generate an AI avatar image from a text prompt and save it to destPath. */
   generateFace: typeof resolveFace;
+  rank: typeof rankCandidates;
 }
 
 export function buildSteps(args: {
-  keywords: string[];
+  searchQueries: string[];
   faceImagePath: string;
   jobId: number;
+  product?: Pick<Classification, 'type' | 'industry' | 'gender' | 'contentStyle'>;
   deps?: Partial<PipelineDeps>;
 }): PipelineSteps {
   const d: PipelineDeps = {
@@ -62,8 +53,19 @@ export function buildSteps(args: {
     process: args.deps?.process ?? distinctify,
     uploadForUrl: args.deps?.uploadForUrl ?? falUpload,
     generateFace: args.deps?.generateFace ?? resolveFace,
+    rank: args.deps?.rank ?? rankCandidates,
   };
   const dir = `media/jobs/${args.jobId}`;
+
+  // Minimal product stub used for relevance scoring when no full classification is available.
+  const product: Classification = {
+    type: args.product?.type ?? 'product',
+    industry: args.product?.industry ?? 'general',
+    gender: args.product?.gender ?? 'unisex',
+    contentStyle: args.product?.contentStyle ?? 'solo-outfit',
+    keywords: args.searchQueries,
+    searchQueries: args.searchQueries,
+  };
 
   return {
     async generateFace(prompt: string, destPath: string) {
@@ -71,7 +73,11 @@ export function buildSteps(args: {
     },
 
     async findCandidates() {
-      return d.find(args.keywords);
+      const raw = await d.find(args.searchQueries);
+      // Score and filter for relevance — keeps only clips that match the product/gender.
+      const scored = await d.rank(product, raw);
+      if (scored.length === 0) throw new Error('No relevant candidates found after scoring');
+      return scored;
     },
 
     async prepareSource(chosen: Candidate) {

@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS products (
   client_id INTEGER NOT NULL REFERENCES clients(id),
   type TEXT,
   industry TEXT,
+  gender TEXT,
   keywords_json TEXT,
+  search_queries_json TEXT,
   photo_path TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

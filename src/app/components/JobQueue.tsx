@@ -7,6 +7,10 @@ type Candidate = {
   downloadUrl: string;
   hasVoice: boolean;
   platform: string;
+  title?: string;
+  hashtags?: string[];
+  relevanceScore?: number;
+  reason?: string;
 };
 
 type Job = {
@@ -21,6 +25,7 @@ type Job = {
 };
 
 const STATUS_META: Record<string, { color: string; label: string }> = {
+  generating_face: { color: '#FF9800', label: 'Generating avatar…' },
   queued: { color: '#888', label: 'Queued' },
   awaiting_approval: { color: '#2196F3', label: 'Pick a clip ↓' },
   downloading: { color: '#FF9800', label: 'Downloading clip' },
@@ -30,7 +35,7 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
   failed: { color: '#F44336', label: 'Failed' },
 };
 
-const AUTO_STATUSES = new Set(['queued', 'downloading', 'swapping', 'processing']);
+const AUTO_STATUSES = new Set(['generating_face', 'queued', 'downloading', 'swapping', 'processing']);
 
 export function JobQueue() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -118,8 +123,18 @@ export function JobQueue() {
                         >
                           Use this
                         </button>
+                        {c.relevanceScore != null && (
+                          <span title={c.reason} style={{
+                            padding: '2px 7px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
+                            background: c.relevanceScore >= 7 ? '#4CAF50' : c.relevanceScore >= 5 ? '#FF9800' : '#F44336',
+                            color: '#fff',
+                          }}>
+                            {c.relevanceScore}/10
+                          </span>
+                        )}
                         <span style={{ fontSize: '0.85rem' }}>
                           {c.views.toLocaleString()} views · {c.platform}
+                          {c.title && <> · <em>{c.title.slice(0, 60)}</em></>}
                         </span>
                         <a href={c.url} target="_blank" rel="noreferrer" style={{ color: '#0070f3', fontSize: '0.8rem' }}>preview</a>
                       </li>

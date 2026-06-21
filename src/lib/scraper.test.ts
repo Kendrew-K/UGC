@@ -13,9 +13,9 @@ describe('filterViral', () => {
 });
 
 describe('findViralVideos', () => {
-  it('passes keywords to the runner and filters results', async () => {
+  it('passes searchQueries to the runner and filters results', async () => {
     const run = async () => [c(9_000_000, false), c(10, false)];
-    const out = await findViralVideos(['makeup'], { run });
+    const out = await findViralVideos(['men fit check jacket'], { run });
     expect(out).toHaveLength(1);
     expect(out[0].views).toBe(9_000_000);
   });
