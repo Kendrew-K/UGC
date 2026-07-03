@@ -53,3 +53,19 @@ export async function resolveFace(
   const url = await generate(spec.prompt);
   return download(url, destPath);
 }
+
+/**
+ * Generates `count` avatar options from the same prompt so the caller can
+ * pick one to save and reuse, instead of committing to a single generation.
+ */
+export async function generateAvatarOptions(
+  prompt: string,
+  count: number,
+  destDir: string,
+  deps: { generate?: AvatarGen; download?: typeof downloadTo } = {}
+): Promise<string[]> {
+  const generate = deps.generate ?? defaultGenerate;
+  const download = deps.download ?? downloadTo;
+  const urls = await Promise.all(Array.from({ length: count }, () => generate(prompt)));
+  return Promise.all(urls.map((url, i) => download(url, `${destDir}/option-${i}.jpg`)));
+}
