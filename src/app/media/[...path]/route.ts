@@ -38,8 +38,30 @@ export async function GET(
 
   const ext = path.extname(filePath).toLowerCase();
   const contentType = MIME[ext] ?? 'application/octet-stream';
+  const size = fs.statSync(filePath).size;
+
+  // Video playback requires Range support: browsers probe with a Range
+  // request before they'll play anything, and refuse to render (silent
+  // black screen, no error) against a server that only ever returns 200.
+  const range = _req.headers.get('range');
+  if (range) {
+    const match = /bytes=(\d*)-(\d*)/.exec(range);
+    const start = match?.[1] ? Number(match[1]) : 0;
+    const end = match?.[2] ? Number(match[2]) : size - 1;
+    const buffer = fs.readFileSync(filePath).subarray(start, end + 1);
+    return new NextResponse(buffer, {
+      status: 206,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Range': `bytes ${start}-${end}/${size}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(end - start + 1),
+      },
+    });
+  }
+
   const buffer = fs.readFileSync(filePath);
   return new NextResponse(buffer, {
-    headers: { 'Content-Type': contentType },
+    headers: { 'Content-Type': contentType, 'Accept-Ranges': 'bytes', 'Content-Length': String(size) },
   });
 }
