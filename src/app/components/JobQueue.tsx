@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { JOB_LABEL } from '@/lib/config';
 
 type Candidate = {
   url: string;
@@ -40,6 +41,7 @@ const AUTO_STATUSES = new Set(['generating_face', 'queued', 'downloading', 'swap
 export function JobQueue() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const advancing = useRef<Set<number>>(new Set());
+  const [previewing, setPreviewing] = useState<string | null>(null);
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -75,6 +77,26 @@ export function JobQueue() {
     }
   }, [jobs, fetchJobs]);
 
+  /** Downloads the clip via our own scraper and opens the real video file,
+   * since TikTok's own web player is unreliable for some scraped links. */
+  async function preview(candidateUrl: string) {
+    setPreviewing(candidateUrl);
+    try {
+      const res = await fetch('/api/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: candidateUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'preview failed');
+      window.open(data.url, '_blank');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Preview failed');
+    } finally {
+      setPreviewing(null);
+    }
+  }
+
   async function approve(jobId: number, chosenIndex: number) {
     await fetch(`/api/jobs/${jobId}/approve`, {
       method: 'POST',
@@ -86,15 +108,15 @@ export function JobQueue() {
 
   return (
     <section style={{ padding: '1.5rem', border: '1px solid #ddd', borderRadius: '8px', color: '#171717' }}>
-      <h2 style={{ marginTop: 0 }}>Job Queue</h2>
-      {jobs.length === 0 && <p style={{ color: '#888' }}>No jobs yet. Upload a product to create one.</p>}
+      <h2 style={{ marginTop: 0 }}>{JOB_LABEL} Queue</h2>
+      {jobs.length === 0 && <p style={{ color: '#888' }}>No {JOB_LABEL.toLowerCase()}s yet. Upload a product to create one.</p>}
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {jobs.map((job) => {
           const candidates: Candidate[] = job.candidates_json ? JSON.parse(job.candidates_json) : [];
           return (
             <li key={job.id} style={{ padding: '0.75rem', marginBottom: '0.5rem', background: '#fafafa', borderRadius: '6px', border: '1px solid #eee' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 600 }}>Job #{job.id}</span>
+                <span style={{ fontWeight: 600 }}>{JOB_LABEL} #{job.id}</span>
                 <span style={{
                   padding: '2px 8px',
                   borderRadius: '4px',
@@ -136,7 +158,13 @@ export function JobQueue() {
                           {c.views.toLocaleString()} views · {c.platform}
                           {c.title && <> · <em>{c.title.slice(0, 60)}</em></>}
                         </span>
-                        <a href={c.url} target="_blank" rel="noreferrer" style={{ color: '#0070f3', fontSize: '0.8rem' }}>preview</a>
+                        <button
+                          onClick={() => preview(c.url)}
+                          disabled={previewing === c.url}
+                          style={{ background: 'none', border: 'none', color: '#0070f3', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}
+                        >
+                          {previewing === c.url ? 'loading…' : 'preview'}
+                        </button>
                       </li>
                     ))}
                   </ul>
