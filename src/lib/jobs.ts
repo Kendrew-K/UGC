@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import type Database from 'better-sqlite3';
 import type { Candidate } from './scraper';
 
@@ -93,6 +94,16 @@ export async function advanceJob(db: Database.Database, jobId: number, steps: Pi
     }
     if (status === 'processing') {
       const finalPath = await steps.process(job.output_path);
+      // Best-effort cleanup: intermediates are no longer needed once ready.
+      for (const p of [job.source_video_path, job.output_path]) {
+        if (p) {
+          try {
+            fs.rmSync(p, { force: true });
+          } catch {
+            // ignore — cleanup must never fail the job transition
+          }
+        }
+      }
       setJob(db, jobId, { status: 'ready', output_path: finalPath });
       return 'ready';
     }

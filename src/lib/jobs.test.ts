@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { getDb } from './db';
 import { createJob, advanceJob, approveCandidate, type PipelineSteps } from './jobs';
@@ -94,5 +95,25 @@ describe('job pipeline', () => {
     db.prepare("UPDATE jobs SET status = 'queued', error = NULL WHERE id = ?").run(id);
     const status = await advanceJob(db, id, okSteps);
     expect(status).toBe('awaiting_approval');
+  });
+
+  it('deletes intermediate source/swapped files once the job reaches ready', async () => {
+    const db = getDb(':memory:');
+    const id = seedJobWithFace(db);
+    const sourcePath = 'media/test-cleanup/src.mp4';
+    const swappedPath = 'media/test-cleanup/swapped.mp4';
+    fs.mkdirSync('media/test-cleanup', { recursive: true });
+    fs.writeFileSync(sourcePath, 'x');
+    fs.writeFileSync(swappedPath, 'x');
+
+    await advanceJob(db, id, okSteps); // -> awaiting_approval
+    approveCandidate(db, id, 0); // -> downloading
+    await advanceJob(db, id, { ...okSteps, prepareSource: async () => sourcePath }); // -> swapping
+    await advanceJob(db, id, { ...okSteps, swap: async () => swappedPath }); // -> processing
+    await advanceJob(db, id, { ...okSteps, process: async () => 'media/test-cleanup/final.mp4' }); // -> ready
+
+    expect(fs.existsSync(sourcePath)).toBe(false);
+    expect(fs.existsSync(swappedPath)).toBe(false);
+    fs.rmSync('media/test-cleanup', { recursive: true, force: true });
   });
 });
