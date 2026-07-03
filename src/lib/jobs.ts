@@ -109,7 +109,15 @@ export async function advanceJob(db: Database.Database, jobId: number, steps: Pi
     }
     return status;
   } catch (err) {
-    setJob(db, jobId, { status: 'failed', error: err instanceof Error ? err.message : String(err) });
+    const message = err instanceof Error ? err.message : String(err);
+    if (status === 'downloading') {
+      // Download failures are often per-clip (TikTok inconsistently blocks or
+      // omits the CDN URL for a given video) -- let the client pick a
+      // different candidate from the same list instead of dead-ending the job.
+      setJob(db, jobId, { status: 'awaiting_approval', chosen_candidate_json: null, error: message });
+      return 'awaiting_approval';
+    }
+    setJob(db, jobId, { status: 'failed', error: message });
     return 'failed';
   }
 }

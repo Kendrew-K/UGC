@@ -97,6 +97,25 @@ describe('job pipeline', () => {
     expect(status).toBe('awaiting_approval');
   });
 
+  it('returns to awaiting_approval (not failed) when the chosen clip fails to download, so the client can pick another', async () => {
+    const db = getDb(':memory:');
+    const id = seedJobWithFace(db);
+    await advanceJob(db, id, okSteps); // -> awaiting_approval
+    approveCandidate(db, id, 0); // -> downloading
+    const status = await advanceJob(db, id, {
+      ...okSteps,
+      prepareSource: async () => { throw new Error('no downloadable video URL found on page'); },
+    });
+    expect(status).toBe('awaiting_approval');
+    const row = db.prepare('SELECT status, error, candidates_json, chosen_candidate_json FROM jobs WHERE id = ?').get(id) as any;
+    expect(row.status).toBe('awaiting_approval');
+    expect(row.error).toMatch(/no downloadable video url/i);
+    expect(row.chosen_candidate_json).toBeNull();
+    expect(JSON.parse(row.candidates_json)).toHaveLength(1);
+    // client can immediately pick again
+    expect(approveCandidate(db, id, 0)).toBe('downloading');
+  });
+
   it('deletes intermediate source/swapped files once the job reaches ready', async () => {
     const db = getDb(':memory:');
     const id = seedJobWithFace(db);
