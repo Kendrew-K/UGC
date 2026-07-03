@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { findViralVideos, type Candidate } from './scraper';
+import { findViralVideos, resolveVideoUrl, type Candidate } from './scraper';
 import { downloadTo } from './download';
 import { getSwapProvider } from './swap';
 import { distinctify } from './postprocess';
@@ -32,6 +32,7 @@ async function falUpload(localPath: string): Promise<string> {
 export interface PipelineDeps {
   find: typeof findViralVideos;
   download: typeof downloadTo;
+  resolveVideo: typeof resolveVideoUrl;
   swap: (input: { videoUrl: string; imageUrl: string }) => Promise<string>;
   process: typeof distinctify;
   uploadForUrl: (localPath: string) => Promise<string>;
@@ -49,6 +50,7 @@ export function buildSteps(args: {
   const d: PipelineDeps = {
     find: args.deps?.find ?? findViralVideos,
     download: args.deps?.download ?? downloadTo,
+    resolveVideo: args.deps?.resolveVideo ?? resolveVideoUrl,
     swap: args.deps?.swap ?? ((input) => getSwapProvider().swap(input)),
     process: args.deps?.process ?? distinctify,
     uploadForUrl: args.deps?.uploadForUrl ?? falUpload,
@@ -82,7 +84,11 @@ export function buildSteps(args: {
 
     async prepareSource(chosen: Candidate) {
       const sourcePath = `${dir}/source.mp4`;
-      await d.download(chosen.downloadUrl, sourcePath);
+      // The search scraper often omits downloadUrl; fall back to the Python
+      // sidecar's resolver, which downloads the video (via video.playAddr)
+      // and returns a local file path.
+      const dlUrl = chosen.downloadUrl || await d.resolveVideo(chosen.url);
+      await d.download(dlUrl, sourcePath);
       return sourcePath;
     },
 

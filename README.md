@@ -34,9 +34,6 @@ Edit `.env` and add your credentials:
 # Claude (for product classification)
 ANTHROPIC_API_KEY=your-key-here
 
-# Apify (for scraping viral TikTok/Reels videos)
-APIFY_TOKEN=your-key-here
-
 # Face-swap provider (fal.ai, recommended)
 FAL_KEY=your-key-here
 SWAP_PROVIDER=fal
@@ -84,7 +81,8 @@ The TikTok scraper runs as a small Python sidecar. One-time setup:
 │    └→ Claude analyzes product, determines category      │
 ├─────────────────────────────────────────────────────────┤
 │ 3. Viral Video Scraping                                 │
-│    └→ Apify finds TikTok/Reels (≥1M views) in category  │
+│    └→ Python sidecar (Scrapling) finds TikTok clips     │
+│       (≥1M views) in category                           │
 ├─────────────────────────────────────────────────────────┤
 │ 4. Face-Swap & Animation                                │
 │    └→ WAN 2.2 animates faces into viral video footage   │
@@ -113,11 +111,11 @@ All media files and database records are stored locally in the `media/` director
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | Claude API key for product classification |
-| `APIFY_TOKEN` | Yes | Apify token for viral video scraping |
 | `FAL_KEY` | If `SWAP_PROVIDER=fal` | FAL API key for face-swap |
 | `REPLICATE_API_TOKEN` | If `SWAP_PROVIDER=replicate` | Replicate API key for face-swap |
 | `BANANA_PRO_API_KEY` | No | Banana API key for video distinctiveness |
 | `SWAP_PROVIDER` | No | Which face-swap service to use (`fal` or `replicate`, default: `fal`) |
+| `PYTHON_BIN` | No | Path to Python executable for the TikTok scraper sidecar (default: `python` on PATH) |
 
 ## Troubleshooting
 

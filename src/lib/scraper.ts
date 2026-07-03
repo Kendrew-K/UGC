@@ -37,8 +37,15 @@ async function runSidecar(args: string[]): Promise<string> {
 }
 
 const defaultSearch: ScraperSearch = async (searchQuery) => {
-  const stdout = await runSidecar(['search', searchQuery]);
-  return JSON.parse(stdout) as Candidate[];
+  const stdout = (await runSidecar(['search', searchQuery])).trim();
+  try {
+    return JSON.parse(stdout) as Candidate[];
+  } catch (err) {
+    const snippet = stdout.slice(0, 200);
+    throw new Error(
+      `tiktok_scraper.py returned non-JSON output for search "${searchQuery}": ${snippet}`
+    );
+  }
 };
 
 const defaultResolve: ScraperResolve = async (tiktokUrl) => {
