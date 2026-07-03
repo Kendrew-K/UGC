@@ -19,6 +19,7 @@ type Job = {
   status: string;
   product_id: number;
   error?: string | null;
+  name?: string | null;
   candidates_json?: string | null;
   output_path?: string | null;
   created_at: string;
@@ -42,6 +43,8 @@ export function JobQueue() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const advancing = useRef<Set<number>>(new Set());
   const [previewing, setPreviewing] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingName, setEditingName] = useState('');
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -106,6 +109,24 @@ export function JobQueue() {
     await fetchJobs();
   }
 
+  /** Persists a new display name for a job, then exits edit mode. */
+  async function rename(jobId: number, name: string) {
+    await fetch(`/api/jobs/${jobId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    setEditingId(null);
+    await fetchJobs();
+  }
+
+  /** Deletes a job outright (used for the trash button and for dismissing
+   * a failed job before the 1-hour auto-sweep would otherwise remove it). */
+  async function removeJob(jobId: number) {
+    await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+    await fetchJobs();
+  }
+
   return (
     <section style={{ padding: '1.5rem', border: '1px solid #ddd', borderRadius: '8px', color: '#171717' }}>
       <h2 style={{ marginTop: 0 }}>{JOB_LABEL} Queue</h2>
@@ -116,7 +137,24 @@ export function JobQueue() {
           return (
             <li key={job.id} style={{ padding: '0.75rem', marginBottom: '0.5rem', background: '#fafafa', borderRadius: '6px', border: '1px solid #eee' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 600 }}>{JOB_LABEL} #{job.id}</span>
+                {editingId === job.id ? (
+                  <input
+                    autoFocus
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onBlur={() => rename(job.id, editingName.trim() || `${JOB_LABEL} #${job.id}`)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    style={{ fontWeight: 600, fontSize: '1rem', border: '1px solid #0070f3', borderRadius: 4, padding: '2px 6px' }}
+                  />
+                ) : (
+                  <span
+                    onClick={() => { setEditingId(job.id); setEditingName(job.name ?? `${JOB_LABEL} #${job.id}`); }}
+                    style={{ fontWeight: 600, cursor: 'pointer' }}
+                    title="Click to rename"
+                  >
+                    {job.name ?? `${JOB_LABEL} #${job.id}`}
+                  </span>
+                )}
                 <span style={{
                   padding: '2px 8px',
                   borderRadius: '4px',
@@ -131,6 +169,13 @@ export function JobQueue() {
                 {job.status === 'ready' && job.output_path && (
                   <a href="/ready" style={{ color: '#0070f3', fontWeight: 600, fontSize: '0.85rem' }}>View →</a>
                 )}
+                <button
+                  onClick={() => { if (confirm(`Delete ${job.name ?? `${JOB_LABEL} #${job.id}`}?`)) removeJob(job.id); }}
+                  title="Delete this job"
+                  style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: '1rem' }}
+                >
+                  🗑
+                </button>
               </div>
 
               {job.status === 'awaiting_approval' && (
@@ -172,7 +217,17 @@ export function JobQueue() {
               )}
 
               {job.error && (
-                <p style={{ color: 'red', margin: '0.5rem 0 0', fontSize: '0.85rem' }}>Error: {job.error}</p>
+                <p style={{ color: 'red', margin: '0.5rem 0 0', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span>Error: {job.error}</span>
+                  {job.status === 'failed' && (
+                    <button
+                      onClick={() => removeJob(job.id)}
+                      style={{ padding: '2px 8px', fontSize: '0.75rem', borderRadius: 4, border: '1px solid #F44336', background: '#fff', color: '#F44336', cursor: 'pointer' }}
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                </p>
               )}
               <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#aaa' }}>
                 Updated: {new Date(job.updated_at).toLocaleString()}
