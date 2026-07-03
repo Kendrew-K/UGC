@@ -1,0 +1,57 @@
+# python/test_tiktok_scraper.py
+import unittest
+from tiktok_scraper import extract_universal_data, parse_search_results, parse_video_detail
+
+SEARCH_HTML = '''<html><body>
+<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+{"__DEFAULT_SCOPE__": {"webapp.search-detail": {"searchResult": {"item_list": [
+  {"id": "123", "desc": "cool jacket #fit", "stats": {"playCount": 5000000},
+   "video": {"playAddr": "https://cdn.example/v1.mp4"},
+   "music": {"original": false},
+   "challenges": [{"title": "fit"}],
+   "author": {"uniqueId": "someuser"}}
+]}}}}
+</script>
+</body></html>'''
+
+VIDEO_HTML = '''<html><body>
+<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+{"__DEFAULT_SCOPE__": {"webapp.video-detail": {"itemInfo": {"itemStruct":
+  {"video": {"playAddr": "https://cdn.example/v2.mp4"}}
+}}}}
+</script>
+</body></html>'''
+
+
+class TestExtractUniversalData(unittest.TestCase):
+    def test_extracts_embedded_json(self):
+        data = extract_universal_data(SEARCH_HTML)
+        self.assertIn('__DEFAULT_SCOPE__', data)
+
+    def test_raises_when_blob_missing(self):
+        with self.assertRaises(ValueError):
+            extract_universal_data('<html><body>no data here</body></html>')
+
+
+class TestParseSearchResults(unittest.TestCase):
+    def test_maps_items_to_candidates(self):
+        candidates = parse_search_results(SEARCH_HTML)
+        self.assertEqual(len(candidates), 1)
+        c = candidates[0]
+        self.assertEqual(c['url'], 'https://www.tiktok.com/@someuser/video/123')
+        self.assertEqual(c['views'], 5000000)
+        self.assertEqual(c['downloadUrl'], '')
+        self.assertTrue(c['hasVoice'])  # music.original == False -> no known sound -> voice heuristic true
+        self.assertEqual(c['platform'], 'tiktok')
+        self.assertEqual(c['title'], 'cool jacket #fit')
+        self.assertEqual(c['hashtags'], ['fit'])
+
+
+class TestParseVideoDetail(unittest.TestCase):
+    def test_extracts_download_url(self):
+        result = parse_video_detail(VIDEO_HTML)
+        self.assertEqual(result['downloadUrl'], 'https://cdn.example/v2.mp4')
+
+
+if __name__ == '__main__':
+    unittest.main()
