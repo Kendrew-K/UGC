@@ -13,4 +13,14 @@ describe('downloadTo', () => {
     expect(out).toBe(tmp);
     expect(fs.readFileSync(tmp)).toEqual(Buffer.from([1, 2, 3]));
   });
+
+  it('copies a local file path instead of fetching, and removes the source', async () => {
+    const src = 'media/test-out/local-src.bin';
+    fs.mkdirSync('media/test-out', { recursive: true });
+    fs.writeFileSync(src, Buffer.from([9, 9, 9]));
+    const out = await downloadTo(src, 'media/test-out/copied.bin');
+    expect(out).toBe('media/test-out/copied.bin');
+    expect(fs.readFileSync('media/test-out/copied.bin')).toEqual(Buffer.from([9, 9, 9]));
+    expect(fs.existsSync(src)).toBe(false);
+  });
 });
