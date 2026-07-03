@@ -30,7 +30,8 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
       .then((d) => {
         setSavedAvatarPath(d.path);
         if (d.path) setFaceMode('saved');
-      });
+      })
+      .catch(() => {});
   }, []);
 
   async function onProductFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -66,7 +67,7 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
     setFaceName(file.name);
   }
 
-  const faceReady = faceMode === 'upload' ? !!faceB64 : faceMode === 'saved' ? !!savedAvatarPath : facePrompt.trim().length > 0 && !avatarOptions;
+  const faceReady = faceMode === 'upload' ? !!faceB64 : faceMode === 'saved' ? !!savedAvatarPath : false;
 
   async function start() {
     if (!result?.productId || !faceReady) return;
@@ -98,8 +99,7 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Failed to create job');
-      const note = faceMode === 'generate' ? ' (generating avatar first…)' : '';
-      setStatus(`${JOB_LABEL} #${data.jobIds?.[0]} started${note} — it will run automatically and pause for you to pick a clip in the ${JOB_LABEL} Queue below.`);
+      setStatus(`${JOB_LABEL} #${data.jobIds?.[0]} started — it will run automatically and pause for you to pick a clip in the ${JOB_LABEL} Queue below.`);
       onJobCreated?.();
       setSubmitted(true);
     } catch (err: any) {
