@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { getDb } from './db';
-import { createJob, advanceJob, approveCandidate, type PipelineSteps } from './jobs';
+import { createJob, advanceJob, approveCandidate, renameJob, deleteJob, sweepFailedJobs, type PipelineSteps } from './jobs';
 import type { Candidate } from './scraper';
 
 function seedProduct(db: ReturnType<typeof getDb>) {
@@ -134,5 +134,39 @@ describe('job pipeline', () => {
     expect(fs.existsSync(sourcePath)).toBe(false);
     expect(fs.existsSync(swappedPath)).toBe(false);
     fs.rmSync('media/test-cleanup', { recursive: true, force: true });
+  });
+});
+
+describe('job management', () => {
+  it('renames a job', async () => {
+    const db = getDb(':memory:');
+    const id = seedJobWithFace(db);
+    renameJob(db, id, 'My Custom Name');
+    const row = db.prepare('SELECT name FROM jobs WHERE id = ?').get(id) as any;
+    expect(row.name).toBe('My Custom Name');
+  });
+
+  it('deletes a job and its media directory', async () => {
+    const db = getDb(':memory:');
+    const id = seedJobWithFace(db);
+    const removed: string[] = [];
+    deleteJob(db, id, { rm: (p: any) => { removed.push(p); } });
+    const row = db.prepare('SELECT id FROM jobs WHERE id = ?').get(id);
+    expect(row).toBeUndefined();
+    expect(removed).toEqual([`media/jobs/${id}`]);
+  });
+
+  it('sweeps failed jobs older than the threshold but keeps recent ones', async () => {
+    const db = getDb(':memory:');
+    const oldId = seedJobWithFace(db);
+    const recentId = seedJobWithFace(db);
+    db.prepare("UPDATE jobs SET status = 'failed', updated_at = datetime('now', '-2 hours') WHERE id = ?").run(oldId);
+    db.prepare("UPDATE jobs SET status = 'failed', updated_at = datetime('now') WHERE id = ?").run(recentId);
+    const removed: string[] = [];
+    const count = sweepFailedJobs(db, 60 * 60 * 1000, { rm: (p: any) => { removed.push(p); } });
+    expect(count).toBe(1);
+    expect(db.prepare('SELECT id FROM jobs WHERE id = ?').get(oldId)).toBeUndefined();
+    expect(db.prepare('SELECT id FROM jobs WHERE id = ?').get(recentId)).toBeDefined();
+    expect(removed).toEqual([`media/jobs/${oldId}`]);
   });
 });

@@ -44,6 +44,36 @@ function setJob(db: Database.Database, id: number, fields: Record<string, unknow
   db.prepare(`UPDATE jobs SET ${set}, updated_at = datetime('now') WHERE id = ?`).run(...keys.map((k) => fields[k]), id);
 }
 
+/** Sets a client-chosen display name for a job. */
+export function renameJob(db: Database.Database, jobId: number, name: string): void {
+  setJob(db, jobId, { name });
+}
+
+/** Deletes a job row and its media directory. Media removal is best-effort. */
+export function deleteJob(db: Database.Database, jobId: number, deps: { rm?: typeof fs.rmSync } = {}): void {
+  const rm = deps.rm ?? fs.rmSync;
+  db.prepare('DELETE FROM jobs WHERE id = ?').run(jobId);
+  try {
+    rm(`media/jobs/${jobId}`, { recursive: true, force: true });
+  } catch {
+    // ignore — cleanup must never fail the delete operation
+  }
+}
+
+/** Removes failed jobs older than `olderThanMs` (default 1 hour) so failures never pile up. Returns the count removed. */
+export function sweepFailedJobs(
+  db: Database.Database,
+  olderThanMs = 60 * 60 * 1000,
+  deps: { rm?: typeof fs.rmSync } = {}
+): number {
+  const cutoffSeconds = Math.floor(olderThanMs / 1000);
+  const stale = db
+    .prepare(`SELECT id FROM jobs WHERE status = 'failed' AND updated_at < datetime('now', '-' || ? || ' seconds')`)
+    .all(cutoffSeconds) as { id: number }[];
+  for (const { id } of stale) deleteJob(db, id, deps);
+  return stale.length;
+}
+
 /** Record the client's chosen candidate and release the job to continue automatically. */
 export function approveCandidate(db: Database.Database, jobId: number, chosenIndex: number): JobStatus {
   const job = db.prepare('SELECT status, candidates_json FROM jobs WHERE id = ?').get(jobId) as
