@@ -62,10 +62,15 @@ def _is_downloadable(item: dict) -> bool:
     author.downloadSetting != 0 means the creator disabled downloads, which
     TikTok enforces by withholding the CDN URL server-side (confirmed live:
     downloadSetting == 3 always returns an empty playAddr on the video page).
+    isAd means it's sponsored/ad content, which never exposes a downloadable
+    CDN URL either (confirmed live: no bitrateInfo at all, unlike normal
+    videos, and an empty playAddr on the video page).
     """
     if 'imagePost' in item:
         return False
     if item.get('author', {}).get('downloadSetting', 0) != 0:
+        return False
+    if item.get('isAd'):
         return False
     return True
 

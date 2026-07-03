@@ -80,6 +80,13 @@ class TestParseSearchApiResponse(unittest.TestCase):
         }}]}
         self.assertEqual(parse_search_api_response(payload), [])
 
+    def test_skips_ad_content(self):
+        payload = {'data': [{'item': {
+            'id': '1', 'author': {'uniqueId': 'a', 'downloadSetting': 0},
+            'isAd': True, 'video': {}, 'stats': {}, 'music': {},
+        }}]}
+        self.assertEqual(parse_search_api_response(payload), [])
+
 
 class TestParseVideoDetail(unittest.TestCase):
     def test_extracts_download_url(self):
