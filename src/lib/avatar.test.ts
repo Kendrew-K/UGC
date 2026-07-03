@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { PathLike } from 'node:fs';
 import { getDb } from './db';
 import { getSavedAvatarPath, saveAvatarChoice, clearSavedAvatar } from './avatar';
 
@@ -11,7 +12,7 @@ describe('avatar', () => {
   it('saves a chosen avatar, copying it to media/avatar.jpg and recording it', () => {
     const db = getDb(':memory:');
     const copied: Array<[string, string]> = [];
-    const copyFile = (src: string, dest: string) => { copied.push([src, dest]); };
+    const copyFile = (src: PathLike, dest: PathLike) => { copied.push([String(src), String(dest)]); };
     const result = saveAvatarChoice(db, 'media/avatar-options/option-1.jpg', { copyFile });
     expect(result).toBe('media/avatar.jpg');
     expect(copied).toEqual([['media/avatar-options/option-1.jpg', 'media/avatar.jpg']]);
