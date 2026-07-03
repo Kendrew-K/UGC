@@ -80,6 +80,21 @@ describe('jobs route', () => {
     expect(data.error).toMatch(/face/i);
   });
 
+  it('sweeps stale failed jobs before listing', async () => {
+    const { getDb } = await import('@/lib/db');
+    const db = getDb();
+    const client = db.prepare('INSERT INTO clients (name) VALUES (?)').run('Sweep Client');
+    const product = db
+      .prepare("INSERT INTO products (client_id, type, industry, keywords_json) VALUES (?, 'skincare', 'beauty', '[]')")
+      .run(client.lastInsertRowid);
+    const job = db.prepare('INSERT INTO jobs (product_id, status) VALUES (?, ?)').run(Number(product.lastInsertRowid), 'failed');
+    const staleId = Number(job.lastInsertRowid);
+    db.prepare("UPDATE jobs SET updated_at = datetime('now', '-2 hours') WHERE id = ?").run(staleId);
+
+    const listed = await (await GET()).json();
+    expect(listed.jobs.some((j: any) => j.id === staleId)).toBe(false);
+  });
+
   afterAll(() => {
     try { fs.rmSync('media/jobs', { recursive: true, force: true }); } catch {}
   });

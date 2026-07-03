@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '@/lib/db';
-import { createJob } from '@/lib/jobs';
+import { createJob, sweepFailedJobs } from '@/lib/jobs';
 import { saveMemory } from '@/lib/memory';
 
 export async function GET() {
   const db = getDb();
+  // Clean up stale failed jobs on every fetch so failures never pile up in the list.
+  sweepFailedJobs(db);
   const jobs = db.prepare('SELECT * FROM jobs ORDER BY created_at DESC').all();
   return NextResponse.json({ jobs });
 }
