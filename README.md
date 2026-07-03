@@ -59,6 +59,20 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+## Python setup (TikTok scraper)
+
+The TikTok scraper runs as a small Python sidecar. One-time setup:
+
+1. Install Python 3.10 or newer.
+2. From the project root:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   pip install -r python/requirements.txt
+   ```
+3. Leave the virtualenv activated (or set `PYTHON_BIN` to its python path)
+   whenever you run the app, so `python` on your PATH resolves to this venv.
+
 ## How It Works
 
 ```
