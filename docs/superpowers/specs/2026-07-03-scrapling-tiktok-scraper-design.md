@@ -14,29 +14,59 @@ no changes.
 
 ## Architecture
 
+**Revision note (2026-07-03, post-implementation):** the original design
+below assumed both TikTok pages embed their data as server-rendered JSON.
+Live testing against real TikTok proved that wrong for search: the search
+page only embeds app config, not results — TikTok loads results via a
+client-side XHR call to `/api/search/general/full/` after page load, signed
+by TikTok's own JS (`X-Bogus`/`X-Gnarly`). The video-detail page (used by
+`resolve`) genuinely does embed full item data server-side, so that half of
+the original design held. The sections below describe the **corrected,
+live-verified** implementation; strikethrough-style "original plan" text has
+been replaced rather than kept, since the corrected version is what shipped.
+
 **New: `python/tiktok_scraper.py`** — a CLI script using Scrapling's
-`StealthyFetcher` to fetch TikTok pages and extract data from the
-`__UNIVERSAL_DATA_FOR_REHYDRATION__` JSON blob embedded in the page HTML (the
-same data TikTok's own web client renders from).
+`StealthyFetcher`.
 
 Two subcommands, both print a single JSON value to stdout and exit non-zero
 with a stderr message on failure:
 
 - `python tiktok_scraper.py search "<query>"` → JSON array of candidates:
   `[{url, views, downloadUrl: "", hasVoice, platform: "tiktok", title, hashtags}]`.
-  `downloadUrl` is left empty here — no video is downloaded at search time,
-  matching current behavior (the approval UI only links to `url` for preview).
+  Fetches the search page with `capture_xhr='api/search/general/full'` (plus
+  `network_idle=True`, a fixed `wait`), which makes Scrapling's browser
+  session record the real in-browser API response(s) TikTok's own JS fires
+  after page load — this is the only reliable source of search results,
+  since they are never present in the initial HTML. Each captured response's
+  `data[].item` is mapped to a candidate. `downloadUrl` is left empty here —
+  no video is downloaded at search time, matching current behavior (the
+  approval UI only links to `url` for preview), and the CDN URL in this
+  response is session-bound anyway (see `resolve` below).
 - `python tiktok_scraper.py resolve "<tiktokUrl>" "<destPath>"` → downloads the
   actual video file to `destPath` (creating parent dirs as needed) and prints
-  `{"path": "<destPath>"}`. This replaces the old `downloadAddr` URL hand-off:
-  the sidecar does the real fetch itself (avoiding cross-process cookie/session
-  mismatches that plague raw CDN URLs), rather than returning a URL for Node
-  to fetch separately.
+  `{"path": "<destPath>"}`. The video page **does** embed full item data in
+  `__UNIVERSAL_DATA_FOR_REHYDRATION__` (`webapp.video-detail` →
+  `itemInfo.itemStruct`), so that part parses as originally planned. But the
+  resulting CDN `playAddr` is signed and cookie/session-bound — a fetch from
+  outside the browser session that obtained it gets HTTP 403. So the actual
+  byte download happens *inside* that same browser session, via a
+  `page_action` callback that calls `page.context.request.get(...)` while the
+  session is still open, then writes the bytes straight to `destPath`. This
+  is a stronger version of the original goal ("avoid cross-process
+  cookie/session mismatches") — it turned out to be not just an optimization
+  but a hard requirement.
 - `hasVoice`: heuristic `music.original === false` (has a trending/library
   sound → likely no voice-over), matching the fidelity of the previous
   Apify-sourced field.
+- The `__UNIVERSAL_DATA_FOR_REHYDRATION__` regex must not assume `id` is the
+  first attribute on the `<script>` tag — Playwright's DOM serialization
+  ordering doesn't match TikTok's raw server HTML, and an order-dependent
+  regex silently fails to match on the video-detail page fetched via
+  `page_action`.
 
-**`python/requirements.txt`**: `scrapling`.
+**`python/requirements.txt`**: `scrapling[fetchers]` (bare `scrapling` omits
+`StealthyFetcher`'s dependencies, e.g. `curl_cffi` — confirmed by
+`ModuleNotFoundError` during live testing).
 
 **`src/lib/scraper.ts` changes**:
 - Remove `ApifyClient` import/usage.
@@ -90,9 +120,17 @@ cleanup once a job is done.
   fetching.
 - `jobs.ts`: add a unit test that reaching `ready` deletes the prior
   `source_video_path` and `output_path` files (using a temp dir).
-- No integration test against real TikTok/Python (matches the project's
-  existing "gated live smoke test" pattern if one is wanted later — out of
-  scope here).
+- `python/test_tiktok_scraper.py`: pure-function unit tests for
+  `extract_universal_data`, `parse_search_api_response` (given a fixture
+  matching the real `/api/search/general/full/` shape), and
+  `parse_video_detail` — no network/browser calls in the test suite itself.
+- **Live verification performed 2026-07-03** (not an automated test, a manual
+  run against production TikTok): `search "men fit check jacket"` returned 31
+  real candidates with correct field shapes; `resolve` on one of those
+  candidates downloaded a real, playable 1.68MB `.mp4`. This is what
+  surfaced and validated the architecture revision above — the originally
+  planned embedded-HTML search parsing produced zero results live, which is
+  why it changed.
 
 ## Out of scope (explicitly deferred)
 
