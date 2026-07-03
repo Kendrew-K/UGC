@@ -1,1 +1,1 @@
-scrapling
+scrapling[fetchers]
