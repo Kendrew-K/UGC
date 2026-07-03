@@ -16,3 +16,21 @@ describe('getDb', () => {
     expect(row).toBeTruthy();
   });
 });
+
+describe('avatar + job name migrations', () => {
+  it('creates the avatar table', () => {
+    const db = getDb(':memory:');
+    db.prepare("INSERT INTO avatar (id, image_path) VALUES (1, 'media/avatar.jpg')").run();
+    const row = db.prepare('SELECT image_path FROM avatar WHERE id = 1').get() as any;
+    expect(row.image_path).toBe('media/avatar.jpg');
+  });
+
+  it('adds a name column to jobs', () => {
+    const db = getDb(':memory:');
+    const cl = db.prepare('INSERT INTO clients (name) VALUES (?)').run('Test');
+    const pr = db.prepare('INSERT INTO products (client_id, type) VALUES (?, ?)').run(cl.lastInsertRowid, 'skincare');
+    const job = db.prepare('INSERT INTO jobs (product_id, name) VALUES (?, ?)').run(pr.lastInsertRowid, 'My Job');
+    const row = db.prepare('SELECT name FROM jobs WHERE id = ?').get(job.lastInsertRowid) as any;
+    expect(row.name).toBe('My Job');
+  });
+});
