@@ -66,6 +66,20 @@ class TestParseSearchApiResponse(unittest.TestCase):
         candidates = parse_search_api_response({'data': [{'type': 2}]})
         self.assertEqual(candidates, [])
 
+    def test_skips_photo_carousel_posts(self):
+        payload = {'data': [{'item': {
+            'id': '1', 'author': {'uniqueId': 'a', 'downloadSetting': 0},
+            'imagePost': {'images': []}, 'video': {}, 'stats': {}, 'music': {},
+        }}]}
+        self.assertEqual(parse_search_api_response(payload), [])
+
+    def test_skips_download_disabled_creators(self):
+        payload = {'data': [{'item': {
+            'id': '1', 'author': {'uniqueId': 'a', 'downloadSetting': 3},
+            'video': {}, 'stats': {}, 'music': {},
+        }}]}
+        self.assertEqual(parse_search_api_response(payload), [])
+
 
 class TestParseVideoDetail(unittest.TestCase):
     def test_extracts_download_url(self):

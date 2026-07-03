@@ -55,16 +55,36 @@ def _candidate_from_item(item: dict) -> dict:
     }
 
 
+def _is_downloadable(item: dict) -> bool:
+    """Whether `resolve` has any real chance of getting a video for this item.
+
+    'imagePost' means it's a photo-carousel post -- no video exists at all.
+    author.downloadSetting != 0 means the creator disabled downloads, which
+    TikTok enforces by withholding the CDN URL server-side (confirmed live:
+    downloadSetting == 3 always returns an empty playAddr on the video page).
+    """
+    if 'imagePost' in item:
+        return False
+    if item.get('author', {}).get('downloadSetting', 0) != 0:
+        return False
+    return True
+
+
 def parse_search_api_response(payload: dict) -> list[dict]:
     """Map one page of TikTok's /api/search/general/full/ JSON response to
     our internal candidate shape.
+
+    Items that can never be downloaded (photo posts, download-disabled
+    creators) are dropped here rather than surfaced as a pickable candidate
+    that fails later at resolve time.
 
     downloadUrl is always '' here: this response's video.playAddr is
     session-bound and expires quickly, so the real download happens later,
     inside an authenticated browser session, via `resolve`.
     """
     entries = payload.get('data', [])
-    return [_candidate_from_item(e['item']) for e in entries if 'item' in e]
+    items = [e['item'] for e in entries if 'item' in e]
+    return [_candidate_from_item(item) for item in items if _is_downloadable(item)]
 
 
 def parse_video_detail(html: str) -> dict:
