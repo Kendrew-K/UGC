@@ -5,6 +5,8 @@ import { JOB_LABEL } from '@/lib/config';
 type Candidate = {
   url: string;
   views: number;
+  durationS?: number;
+  coverUrl?: string;
   downloadUrl: string;
   hasVoice: boolean;
   platform: string;
@@ -17,6 +19,7 @@ type Candidate = {
 type Job = {
   id: number;
   status: string;
+  media_type?: string | null;
   product_id: number;
   error?: string | null;
   name?: string | null;
@@ -26,23 +29,36 @@ type Job = {
   updated_at: string;
 };
 
-const STATUS_META: Record<string, { color: string; label: string }> = {
-  generating_face: { color: '#FF9800', label: 'Generating avatar…' },
-  queued: { color: '#888', label: 'Queued' },
-  awaiting_approval: { color: '#2196F3', label: 'Pick a clip ↓' },
-  downloading: { color: '#FF9800', label: 'Downloading clip' },
-  swapping: { color: '#9C27B0', label: 'Face-swapping video' },
-  processing: { color: '#00BCD4', label: 'Finishing up' },
-  ready: { color: '#4CAF50', label: 'Ready to post 🎉' },
-  failed: { color: '#F44336', label: 'Failed' },
+const STATUS_META: Record<string, { pill: string; label: string }> = {
+  generating_face: { pill: 'pill-amber', label: 'Generating avatar…' },
+  queued: { pill: 'pill-gray', label: 'Queued' },
+  awaiting_approval: { pill: 'pill-blue', label: 'Pick a clip ↓' },
+  downloading: { pill: 'pill-amber', label: 'Downloading clip' },
+  generating: { pill: 'pill-violet', label: 'Generating…' },
+  processing: { pill: 'pill-violet', label: 'Finishing up' },
+  ready: { pill: 'pill-green', label: 'Ready to post 🎉' },
+  failed: { pill: 'pill-red', label: 'Failed' },
 };
 
-const AUTO_STATUSES = new Set(['generating_face', 'queued', 'downloading', 'swapping', 'processing']);
+const AUTO_STATUSES = new Set(['generating_face', 'queued', 'downloading', 'generating', 'processing']);
+
+/** TikTok blocks downloads for some clips (shop/restricted videos); the
+ * scraper surfaces that as this error, and such a clip can't be used at all. */
+function isUndownloadableError(message: string): boolean {
+  return /no downloadable video url/i.test(message);
+}
+
+type Preview =
+  | { candidateUrl: string; state: 'loading' }
+  | { candidateUrl: string; state: 'ready'; videoUrl: string }
+  | { candidateUrl: string; state: 'image'; imageUrl: string }
+  | { candidateUrl: string; state: 'error'; message: string; blocked: boolean };
 
 export function JobQueue() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const advancing = useRef<Set<number>>(new Set());
-  const [previewing, setPreviewing] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [unavailable, setUnavailable] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
 
@@ -80,23 +96,45 @@ export function JobQueue() {
     }
   }, [jobs, fetchJobs]);
 
-  /** Downloads the clip via our own scraper and opens the real video file,
-   * since TikTok's own web player is unreliable for some scraped links. */
-  async function preview(candidateUrl: string) {
-    setPreviewing(candidateUrl);
+  /** Downloads the clip through the scraper's own browser session and plays
+   * the local file in the modal. TikTok's embed player can't stream inside an
+   * iframe (its CDN needs first-party cookies), so downloading is the only
+   * reliable preview. First view of a clip takes ~30s; repeats are cached. */
+  async function openPreview(candidate: Candidate, mediaType?: string | null) {
+    // Photo posts need no downloader: the full-size image URL is directly viewable.
+    if (mediaType === 'picture') {
+      const imageUrl = candidate.downloadUrl || candidate.coverUrl;
+      if (imageUrl) setPreview({ candidateUrl: candidate.url, state: 'image', imageUrl });
+      return;
+    }
+    setPreview({ candidateUrl: candidate.url, state: 'loading' });
     try {
       const res = await fetch('/api/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: candidateUrl }),
+        body: JSON.stringify({ url: candidate.url }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'preview failed');
-      window.open(data.url, '_blank');
+      if (!res.ok) throw new Error(data.error ?? 'Preview failed');
+      setPreview((p) =>
+        p?.candidateUrl === candidate.url ? { candidateUrl: candidate.url, state: 'ready', videoUrl: data.url } : p
+      );
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Preview failed');
-    } finally {
-      setPreviewing(null);
+      const message = err instanceof Error ? err.message : 'Preview failed';
+      const blocked = isUndownloadableError(message);
+      if (blocked) setUnavailable((prev) => new Set(prev).add(candidate.url));
+      setPreview((p) =>
+        p?.candidateUrl === candidate.url
+          ? {
+              candidateUrl: candidate.url,
+              state: 'error',
+              blocked,
+              message: blocked
+                ? 'TikTok blocks downloading this clip, so it can’t be previewed or used. Pick another clip.'
+                : message,
+            }
+          : p
+      );
     }
   }
 
@@ -128,51 +166,45 @@ export function JobQueue() {
   }
 
   return (
-    <section style={{ padding: '1.5rem', border: '1px solid #ddd', borderRadius: '8px', color: '#171717' }}>
-      <h2 style={{ marginTop: 0 }}>{JOB_LABEL} Queue</h2>
-      {jobs.length === 0 && <p style={{ color: '#888' }}>No {JOB_LABEL.toLowerCase()}s yet. Upload a product to create one.</p>}
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+    <section className="card">
+      <h2>{JOB_LABEL} Queue</h2>
+      {jobs.length === 0 && <p className="muted">No {JOB_LABEL.toLowerCase()}s yet. Upload a product to create one.</p>}
+      <ul style={{ listStyle: 'none' }}>
         {jobs.map((job) => {
           const candidates: Candidate[] = job.candidates_json ? JSON.parse(job.candidates_json) : [];
           return (
-            <li key={job.id} style={{ padding: '0.75rem', marginBottom: '0.5rem', background: '#fafafa', borderRadius: '6px', border: '1px solid #eee' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <li key={job.id} className="job-item">
+              <div className="job-head">
                 {editingId === job.id ? (
                   <input
+                    type="text"
                     autoFocus
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
                     onBlur={() => rename(job.id, editingName.trim() || `${JOB_LABEL} #${job.id}`)}
                     onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                    style={{ fontWeight: 600, fontSize: '1rem', border: '1px solid #0070f3', borderRadius: 4, padding: '2px 6px' }}
+                    style={{ fontWeight: 600, padding: '2px 8px' }}
                   />
                 ) : (
                   <span
+                    className="job-name"
                     onClick={() => { setEditingId(job.id); setEditingName(job.name ?? `${JOB_LABEL} #${job.id}`); }}
-                    style={{ fontWeight: 600, cursor: 'pointer' }}
                     title="Click to rename"
                   >
                     {job.name ?? `${JOB_LABEL} #${job.id}`}
                   </span>
                 )}
-                <span style={{
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  background: STATUS_META[job.status]?.color ?? '#888',
-                  color: '#fff',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                }}>
+                <span className={`pill ${STATUS_META[job.status]?.pill ?? 'pill-gray'}`}>
                   {STATUS_META[job.status]?.label ?? job.status}
                 </span>
-                {AUTO_STATUSES.has(job.status) && <span style={{ fontSize: '0.8rem', color: '#888' }}>working…</span>}
+                {AUTO_STATUSES.has(job.status) && <span className="muted small">working…</span>}
                 {job.status === 'ready' && job.output_path && (
-                  <a href="/ready" style={{ color: '#0070f3', fontWeight: 600, fontSize: '0.85rem' }}>View →</a>
+                  <a href="/ready" className="nav-link small">View →</a>
                 )}
                 <button
                   onClick={() => { if (confirm(`Delete ${job.name ?? `${JOB_LABEL} #${job.id}`}?`)) removeJob(job.id); }}
                   title="Delete this job"
-                  style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: '1rem' }}
+                  style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1rem' }}
                 >
                   🗑
                 </button>
@@ -180,62 +212,117 @@ export function JobQueue() {
 
               {job.status === 'awaiting_approval' && (
                 <div style={{ marginTop: '0.75rem' }}>
-                  <p style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>Choose a viral clip to base the video on:</p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {candidates.slice(0, 6).map((c, i) => (
-                      <li key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                        <button
-                          onClick={() => approve(job.id, i)}
-                          style={{ padding: '4px 12px', cursor: 'pointer', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '4px' }}
-                        >
-                          Use this
-                        </button>
-                        {c.relevanceScore != null && (
-                          <span title={c.reason} style={{
-                            padding: '2px 7px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
-                            background: c.relevanceScore >= 7 ? '#4CAF50' : c.relevanceScore >= 5 ? '#FF9800' : '#F44336',
-                            color: '#fff',
-                          }}>
-                            {c.relevanceScore}/10
+                  <p style={{ marginBottom: '0.5rem', fontWeight: 600 }}>Choose a viral clip to base the video on:</p>
+                  <ul style={{ listStyle: 'none' }}>
+                    {candidates.slice(0, 6).map((c, i) => {
+                      const blocked = unavailable.has(c.url);
+                      return (
+                        <li key={i} className={`candidate-row${blocked ? ' unavailable' : ''}`}>
+                          {c.coverUrl && (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={c.coverUrl}
+                              alt="Clip thumbnail"
+                              onClick={() => openPreview(c, job.media_type)}
+                              style={{ height: 72, borderRadius: 6, cursor: 'pointer' }}
+                              title="Click to preview"
+                            />
+                          )}
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => approve(job.id, i)}
+                            disabled={blocked}
+                            title={blocked ? 'TikTok blocks downloading this clip, so it can’t be used' : undefined}
+                          >
+                            Use this
+                          </button>
+                          {c.relevanceScore != null && (
+                            <span
+                              title={c.reason}
+                              className={`pill ${c.relevanceScore >= 7 ? 'pill-green' : c.relevanceScore >= 5 ? 'pill-amber' : 'pill-red'}`}
+                            >
+                              {c.relevanceScore}/10
+                            </span>
+                          )}
+                          <span style={{ fontSize: '0.85rem' }}>
+                            <span className="mono">{c.views.toLocaleString()} views</span>
+                            {c.durationS ? <> · <span className="mono">{c.durationS}s</span></> : null} · {c.platform}
+                            {c.title && <> · <em>{c.title.slice(0, 60)}</em></>}
                           </span>
-                        )}
-                        <span style={{ fontSize: '0.85rem' }}>
-                          {c.views.toLocaleString()} views · {c.platform}
-                          {c.title && <> · <em>{c.title.slice(0, 60)}</em></>}
-                        </span>
-                        <button
-                          onClick={() => preview(c.url)}
-                          disabled={previewing === c.url}
-                          style={{ background: 'none', border: 'none', color: '#0070f3', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}
-                        >
-                          {previewing === c.url ? 'loading…' : 'preview'}
-                        </button>
-                      </li>
-                    ))}
+                          {blocked ? (
+                            <span className="pill pill-red">download blocked — pick another</span>
+                          ) : (
+                            <button className="btn btn-ghost btn-sm" onClick={() => openPreview(c, job.media_type)}>
+                              Preview
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
 
               {job.error && (
-                <p style={{ color: 'red', margin: '0.5rem 0 0', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <p className="error-note">
                   <span>Error: {job.error}</span>
                   {job.status === 'failed' && (
-                    <button
-                      onClick={() => removeJob(job.id)}
-                      style={{ padding: '2px 8px', fontSize: '0.75rem', borderRadius: 4, border: '1px solid #F44336', background: '#fff', color: '#F44336', cursor: 'pointer' }}
-                    >
+                    <button className="btn btn-outline btn-sm" onClick={() => removeJob(job.id)}>
                       Dismiss
                     </button>
                   )}
                 </p>
               )}
-              <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#aaa' }}>
+              <p className="muted small" style={{ marginTop: '0.4rem' }}>
                 Updated: {new Date(job.updated_at).toLocaleString()}
               </p>
             </li>
           );
         })}
       </ul>
+
+      {preview && (
+        <div className="lightbox" onClick={() => setPreview(null)} role="dialog" aria-label="Clip preview">
+          {preview.state === 'loading' && (
+            <div style={{ color: '#f4f2f5', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+              <p style={{ fontSize: '1.05rem', fontWeight: 600 }}>Fetching clip from TikTok…</p>
+              <p className="small" style={{ marginTop: 6, opacity: 0.8 }}>
+                First view of a clip takes about 30 seconds. After that it opens instantly.
+              </p>
+            </div>
+          )}
+          {preview.state === 'ready' && (
+            <video
+              src={preview.videoUrl}
+              controls
+              preload="auto"
+              onClick={(e) => e.stopPropagation()}
+              style={{ width: 340, maxWidth: '92vw', maxHeight: '85vh', borderRadius: 12, background: '#000' }}
+            />
+          )}
+          {preview.state === 'image' && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={preview.imageUrl}
+              alt="Photo preview"
+              onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: '92vw', maxHeight: '85vh', borderRadius: 12, background: '#000' }}
+            />
+          )}
+          {preview.state === 'error' && (
+            <div style={{ color: '#f4f2f5', textAlign: 'center', maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+              <p style={{ fontWeight: 600 }}>{preview.blocked ? 'This clip can’t be used' : 'Preview failed'}</p>
+              <p className="small" style={{ marginTop: 6, opacity: 0.8, overflowWrap: 'anywhere' }}>{preview.message}</p>
+              {!preview.blocked && (
+                <a href={preview.candidateUrl} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm" style={{ marginTop: 12 }}>
+                  Watch on TikTok instead
+                </a>
+              )}
+            </div>
+          )}
+          <p className="lightbox-caption">Click anywhere outside the video to close</p>
+        </div>
+      )}
     </section>
   );
 }

@@ -9,22 +9,24 @@ describe('avatar', () => {
     expect(getSavedAvatarPath(db)).toBeNull();
   });
 
-  it('saves a chosen avatar, copying it to media/avatar.jpg and recording it', () => {
+  it('saves a chosen avatar into the library and records it as the default', () => {
     const db = getDb(':memory:');
     const copied: Array<[string, string]> = [];
     const copyFile = (src: PathLike, dest: PathLike) => { copied.push([String(src), String(dest)]); };
-    const result = saveAvatarChoice(db, 'media/avatar-options/option-1.jpg', { copyFile });
-    expect(result).toBe('media/avatar.jpg');
-    expect(copied).toEqual([['media/avatar-options/option-1.jpg', 'media/avatar.jpg']]);
-    expect(getSavedAvatarPath(db)).toBe('media/avatar.jpg');
+    const mkdir = (() => undefined) as typeof import('node:fs').mkdirSync;
+    const result = saveAvatarChoice(db, 'media/avatar-options/option-1.jpg', { copyFile, mkdir });
+    expect(result).toMatch(/^media\/avatars\/avatar-\d+\.jpg$/);
+    expect(copied).toEqual([['media/avatar-options/option-1.jpg', result]]);
+    expect(getSavedAvatarPath(db)).toBe(result);
   });
 
-  it('replaces a previously saved avatar rather than erroring on a second save', () => {
+  it('keeps a single default row across repeated saves, pointing at the newest', () => {
     const db = getDb(':memory:');
     const copyFile = () => {};
-    saveAvatarChoice(db, 'media/avatar-options/option-0.jpg', { copyFile });
-    saveAvatarChoice(db, 'media/avatar-options/option-2.jpg', { copyFile });
-    expect(getSavedAvatarPath(db)).toBe('media/avatar.jpg');
+    const mkdir = (() => undefined) as typeof import('node:fs').mkdirSync;
+    saveAvatarChoice(db, 'media/avatar-options/option-0.jpg', { copyFile, mkdir });
+    const second = saveAvatarChoice(db, 'media/avatar-options/option-2.jpg', { copyFile, mkdir });
+    expect(getSavedAvatarPath(db)).toBe(second);
     const count = db.prepare('SELECT COUNT(*) as c FROM avatar').get() as any;
     expect(count.c).toBe(1);
   });

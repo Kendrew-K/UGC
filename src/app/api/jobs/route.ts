@@ -24,12 +24,13 @@ function saveFace(jobId: number, faceImageBase64: string): string {
 
 export async function POST(req: Request) {
   try {
-    const { productId, count, answers, faceImageBase64, facePrompt } = (await req.json()) as {
+    const { productId, count, answers, faceImageBase64, facePrompt, mediaType } = (await req.json()) as {
       productId: number;
       count?: number;
       answers?: Record<string, unknown>;
       faceImageBase64?: string;
       facePrompt?: string;
+      mediaType?: 'video' | 'picture';
     };
     if (!faceImageBase64 && !facePrompt) {
       return NextResponse.json({ error: 'A face photo or avatar prompt is required' }, { status: 400 });
@@ -39,13 +40,13 @@ export async function POST(req: Request) {
     if (product && answers) saveMemory(db, product.type, answers);
     const jobIds = Array.from({ length: count ?? 1 }, () => {
       if (faceImageBase64) {
-        const jobId = createJob(db, productId);
+        const jobId = createJob(db, productId, { mediaType });
         const facePath = saveFace(jobId, faceImageBase64);
         db.prepare("UPDATE jobs SET face_image_path = ?, updated_at = datetime('now') WHERE id = ?").run(facePath, jobId);
         return jobId;
       }
       // Avatar will be generated during the generating_face pipeline step.
-      return createJob(db, productId, { status: 'generating_face', facePrompt: facePrompt! });
+      return createJob(db, productId, { status: 'generating_face', facePrompt: facePrompt!, mediaType });
     });
     return NextResponse.json({ jobIds });
   } catch (err) {

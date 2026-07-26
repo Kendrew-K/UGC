@@ -20,6 +20,7 @@ function migrate(db: Database.Database) {
   if (!hasJob('chosen_candidate_json')) db.exec('ALTER TABLE jobs ADD COLUMN chosen_candidate_json TEXT');
   if (!hasJob('face_prompt')) db.exec('ALTER TABLE jobs ADD COLUMN face_prompt TEXT');
   if (!hasJob('name')) db.exec('ALTER TABLE jobs ADD COLUMN name TEXT');
+  if (!hasJob('media_type')) db.exec("ALTER TABLE jobs ADD COLUMN media_type TEXT NOT NULL DEFAULT 'video'");
 
   const prodCols = db.prepare('PRAGMA table_info(products)').all() as { name: string }[];
   const hasProd = (name: string) => prodCols.some((c) => c.name === name);

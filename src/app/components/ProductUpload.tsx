@@ -10,25 +10,55 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
+/** Full-screen viewer for an avatar option; click toggles zoom, Esc or
+ * clicking the backdrop closes. Kept dependency-free on purpose. */
+function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  const [zoomed, setZoomed] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="lightbox" onClick={onClose} role="dialog" aria-label="Avatar preview">
+      <img
+        src={src}
+        alt="Avatar option, enlarged"
+        className={zoomed ? 'zoomed' : ''}
+        onClick={(e) => { e.stopPropagation(); setZoomed(!zoomed); }}
+      />
+      <p className="lightbox-caption">
+        Click the photo to zoom. Judge the person&rsquo;s look — the background is discarded in the final video.
+      </p>
+    </div>
+  );
+}
+
 export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = {}) {
   const [result, setResult] = useState<any>(null);
   const [faceMode, setFaceMode] = useState<'upload' | 'generate' | 'saved'>('upload');
+  const [mediaType, setMediaType] = useState<'video' | 'picture'>('video');
   const [faceB64, setFaceB64] = useState<string | null>(null);
   const [faceName, setFaceName] = useState<string | null>(null);
   const [facePrompt, setFacePrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [savedAvatarPath, setSavedAvatarPath] = useState<string | null>(null);
+  const [savedAvatars, setSavedAvatars] = useState<string[]>([]);
+  const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null);
   const [avatarOptions, setAvatarOptions] = useState<string[] | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/avatar')
       .then((r) => r.json())
       .then((d) => {
-        setSavedAvatarPath(d.path);
+        setSavedAvatars(d.all ?? (d.path ? [d.path] : []));
+        setSelectedAvatar(d.path ?? null);
         if (d.path) setFaceMode('saved');
       })
       .catch(() => {});
@@ -67,7 +97,7 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
     setFaceName(file.name);
   }
 
-  const faceReady = faceMode === 'upload' ? !!faceB64 : faceMode === 'saved' ? !!savedAvatarPath : false;
+  const faceReady = faceMode === 'upload' ? !!faceB64 : faceMode === 'saved' ? !!selectedAvatar : false;
 
   async function start() {
     if (!result?.productId || !faceReady) return;
@@ -79,11 +109,12 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
         productId: result.productId,
         count: 1,
         answers: result.remembered ?? undefined,
+        mediaType,
       };
       if (faceMode === 'upload') {
         body.faceImageBase64 = faceB64;
       } else if (faceMode === 'saved') {
-        const avatarRes = await fetch('/' + savedAvatarPath);
+        const avatarRes = await fetch('/' + selectedAvatar);
         const avatarBuf = await avatarRes.arrayBuffer();
         const bytes = new Uint8Array(avatarBuf);
         let binary = '';
@@ -112,9 +143,10 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
 
   if (submitted) {
     return (
-      <section style={{ marginBottom: '2rem', padding: '1.5rem', border: '1px solid #ddd', borderRadius: '8px', color: '#171717' }}>
-        <p style={{ color: '#2e7d32', marginBottom: '1rem' }}>{status}</p>
+      <section className="card">
+        <p style={{ color: '#1f7a35', marginBottom: '1rem' }}>{status}</p>
         <button
+          className="btn btn-primary"
           onClick={() => {
             setSubmitted(false);
             setResult(null);
@@ -125,7 +157,6 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
             setStatus(null);
             setError(null);
           }}
-          style={{ padding: '8px 16px', fontWeight: 600, cursor: 'pointer', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '6px' }}
         >
           Start another job
         </button>
@@ -134,50 +165,42 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
   }
 
   return (
-    <section style={{ marginBottom: '2rem', padding: '1.5rem', border: '1px solid #ddd', borderRadius: '8px', color: '#171717' }}>
-      <h2 style={{ marginTop: 0 }}>1. Upload product photo</h2>
+    <section className="card">
+      <h2 className="step-label"><span className="step-num">1</span> Upload product photo</h2>
       <input type="file" accept="image/*" onChange={onProductFile} disabled={busy} />
 
       {status && (
-        <p style={{ color: error ? 'red' : busy ? '#0070f3' : '#2e7d32', marginTop: '0.75rem' }}>
+        <p style={{ color: error ? '#b3261e' : busy ? 'var(--accent)' : '#1f7a35', marginTop: '0.75rem' }}>
           {busy && <span aria-hidden style={{ marginRight: 6 }}>⏳</span>}
           {status}
         </p>
       )}
-      {error && <p style={{ color: 'red' }}>Error: {error}</p>}
+      {error && <p className="error-note">Error: {error}</p>}
 
       {result && (
-        <div style={{ marginTop: '1rem', padding: '1rem', background: '#f5f5f5', borderRadius: '6px', color: '#171717' }}>
+        <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--bg)', borderRadius: 10, border: '1px solid var(--line)' }}>
           <p><strong>Type:</strong> {result.classification?.type}</p>
           <p><strong>Industry:</strong> {result.classification?.industry}</p>
           <p><strong>Keywords:</strong> {result.classification?.keywords?.join(', ')}</p>
           {result.remembered
-            ? <p style={{ color: 'green' }}>We remember this product — using saved answers</p>
-            : <p>New product.</p>}
+            ? <p style={{ color: '#1f7a35' }}>We remember this product — using saved answers</p>
+            : <p className="muted">New product.</p>}
         </div>
       )}
 
       {result && (
         <div style={{ marginTop: '1.5rem' }}>
-          <h2 style={{ marginTop: 0 }}>2. Choose face</h2>
+          <h2 className="step-label"><span className="step-num">2</span> Choose face</h2>
 
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-            {(savedAvatarPath ? (['saved', 'upload', 'generate'] as const) : (['upload', 'generate'] as const)).map((mode) => (
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+            {(savedAvatars.length > 0 ? (['saved', 'upload', 'generate'] as const) : (['upload', 'generate'] as const)).map((mode) => (
               <button
                 key={mode}
                 onClick={() => { setFaceMode(mode); setFaceB64(null); setFaceName(null); setFacePrompt(''); setAvatarOptions(null); }}
                 disabled={busy}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '6px',
-                  border: '1px solid #0070f3',
-                  background: faceMode === mode ? '#0070f3' : '#fff',
-                  color: faceMode === mode ? '#fff' : '#0070f3',
-                  cursor: busy ? 'not-allowed' : 'pointer',
-                  fontWeight: 600,
-                }}
+                className={`btn btn-outline${faceMode === mode ? ' selected' : ''}`}
               >
-                {mode === 'upload' ? 'Upload photo' : mode === 'generate' ? 'Create a new avatar' : 'Use saved avatar'}
+                {mode === 'upload' ? 'Upload photo' : mode === 'generate' ? 'Create a new avatar' : 'Use a saved avatar'}
               </button>
             ))}
           </div>
@@ -185,13 +208,45 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
           {faceMode === 'upload' && (
             <div>
               <input type="file" accept="image/*" onChange={onFaceFile} disabled={busy} />
-              {faceName && <span style={{ marginLeft: 8, color: '#2e7d32' }}>✓ {faceName}</span>}
+              {faceName && <span style={{ marginLeft: 8, color: '#1f7a35' }}>✓ {faceName}</span>}
             </div>
           )}
 
-          {faceMode === 'saved' && savedAvatarPath && (
+          {faceMode === 'saved' && savedAvatars.length > 0 && (
             <div>
-              <img src={'/' + savedAvatarPath} alt="Saved avatar" style={{ width: 120, borderRadius: 8 }} />
+              <p className="muted small" style={{ marginBottom: '0.25rem' }}>
+                Click an avatar to use it for this video. Click 🔍 to see it up close.
+              </p>
+              <div className="avatar-grid" style={{ marginTop: '0.5rem' }}>
+                {savedAvatars.map((p) => (
+                  <div key={p} className="avatar-option">
+                    <img
+                      src={'/' + p}
+                      alt="Saved avatar"
+                      onClick={() => setSelectedAvatar(p)}
+                      style={{
+                        cursor: 'pointer',
+                        outline: selectedAvatar === p ? '3px solid var(--accent)' : 'none',
+                        outlineOffset: 2,
+                      }}
+                    />
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 6, alignItems: 'center' }}>
+                      {selectedAvatar === p ? (
+                        <span className="pill pill-green">selected</span>
+                      ) : (
+                        <button className="btn btn-outline btn-sm" onClick={() => setSelectedAvatar(p)}>Select</button>
+                      )}
+                      <button
+                        className="btn btn-outline btn-sm"
+                        title="View up close"
+                        onClick={() => setLightboxSrc('/' + p)}
+                      >
+                        🔍
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -203,9 +258,10 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
                 value={facePrompt}
                 onChange={(e) => setFacePrompt(e.target.value)}
                 disabled={busy || avatarBusy}
-                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontFamily: 'inherit', resize: 'vertical' }}
+                style={{ width: '100%', resize: 'vertical' }}
               />
               <button
+                className="btn btn-primary"
                 onClick={async () => {
                   setAvatarBusy(true);
                   setError(null);
@@ -225,70 +281,80 @@ export function ProductUpload({ onJobCreated }: { onJobCreated?: () => void } = 
                   }
                 }}
                 disabled={busy || avatarBusy || !facePrompt.trim()}
-                style={{ marginTop: '0.5rem', padding: '6px 14px', borderRadius: '6px', border: 'none', background: '#0070f3', color: '#fff', cursor: 'pointer' }}
+                style={{ marginTop: '0.5rem' }}
               >
                 {avatarBusy ? 'Generating…' : 'Generate options'}
               </button>
-              <p style={{ fontSize: '0.8rem', color: '#666', margin: '4px 0 0' }}>
+              <p className="muted small" style={{ marginTop: 4 }}>
                 Generates 3 options to choose from (adds ~2 min). Your choice is saved and reused for future videos.
               </p>
 
               {avatarOptions && (
-                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem' }}>
-                  {avatarOptions.map((p) => (
-                    <div key={p} style={{ textAlign: 'center' }}>
-                      <img src={'/' + p} alt="Avatar option" style={{ width: 100, borderRadius: 8, display: 'block' }} />
-                      <button
-                        onClick={async () => {
-                          setAvatarBusy(true);
-                          try {
-                            const res = await fetch('/api/avatar/choose', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ chosenPath: p }),
-                            });
-                            const data = await res.json();
-                            if (!res.ok) throw new Error(data.error ?? 'Could not save avatar choice');
-                            setSavedAvatarPath(data.path);
-                            setAvatarOptions(null);
-                            setFaceMode('saved');
-                          } catch (err: any) {
-                            setError(err.message ?? 'Could not save avatar choice');
-                          } finally {
-                            setAvatarBusy(false);
-                          }
-                        }}
-                        disabled={avatarBusy}
-                        style={{ marginTop: 4, padding: '2px 8px', fontSize: '0.75rem', borderRadius: 4, border: 'none', background: '#0070f3', color: '#fff', cursor: 'pointer' }}
-                      >
-                        Use this
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <p className="muted small" style={{ marginTop: '0.75rem' }}>
+                    Click a photo to see it up close. Only the person matters — the background isn&rsquo;t used.
+                  </p>
+                  <div className="avatar-grid">
+                    {avatarOptions.map((p) => (
+                      <div key={p} className="avatar-option">
+                        <img src={'/' + p} alt="Avatar option" onClick={() => setLightboxSrc('/' + p)} />
+                        <button
+                          className="btn btn-primary btn-sm"
+                          style={{ marginTop: 6 }}
+                          onClick={async () => {
+                            setAvatarBusy(true);
+                            try {
+                              const res = await fetch('/api/avatar/choose', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ chosenPath: p }),
+                              });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.error ?? 'Could not save avatar choice');
+                              setSavedAvatars((prev) => [data.path, ...prev]);
+                              setSelectedAvatar(data.path);
+                              setAvatarOptions(null);
+                              setFaceMode('saved');
+                            } catch (err: any) {
+                              setError(err.message ?? 'Could not save avatar choice');
+                            } finally {
+                              setAvatarBusy(false);
+                            }
+                          }}
+                          disabled={avatarBusy}
+                        >
+                          Use this
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           )}
 
-          <div style={{ marginTop: '1rem' }}>
-            <button
-              onClick={start}
-              disabled={busy || !faceReady}
-              style={{
-                padding: '8px 16px',
-                fontWeight: 600,
-                cursor: busy || !faceReady ? 'not-allowed' : 'pointer',
-                background: !faceReady ? '#ccc' : '#0070f3',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-              }}
-            >
-              Generate video
+          <div style={{ marginTop: '1.25rem' }}>
+            <h2 className="step-label"><span className="step-num">3</span> What to create</h2>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+              {(['video', 'picture'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setMediaType(t)}
+                  disabled={busy}
+                  className={`btn btn-outline${mediaType === t ? ' selected' : ''}`}
+                >
+                  {t === 'video' ? '🎬 Video' : '🖼 Picture'}
+                </button>
+              ))}
+            </div>
+            <button className="btn btn-primary" onClick={start} disabled={busy || !faceReady}>
+              {mediaType === 'video' ? 'Generate video' : 'Generate picture'}
             </button>
           </div>
         </div>
       )}
+
+      {lightboxSrc && <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
     </section>
   );
 }

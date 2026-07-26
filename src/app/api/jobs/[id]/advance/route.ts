@@ -1,16 +1,22 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { advanceJob } from '@/lib/jobs';
-import { buildSteps } from '@/lib/pipeline';
+import { buildRemakeSteps, buildPictureRemakeSteps } from '@/lib/pipeline';
 import type { Classification } from '@/lib/classifier';
 
-interface JobRow { product_id: number; face_image_path: string | null }
+interface JobRow {
+  product_id: number;
+  face_image_path: string | null;
+  media_type: string | null;
+  chosen_candidate_json: string | null;
+}
 interface ProductRow {
   type: string;
   industry: string;
   gender: string | null;
   keywords_json: string;
   search_queries_json: string | null;
+  photo_path: string | null;
 }
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -30,7 +36,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     contentStyle: 'solo-outfit',
   };
 
-  const steps = buildSteps({ searchQueries, faceImagePath: job.face_image_path ?? '', jobId, product: productHint });
+  const build = job.media_type === 'picture' ? buildPictureRemakeSteps : buildRemakeSteps;
+  const steps = build({
+    searchQueries,
+    faceImagePath: job.face_image_path ?? '',
+    productPhotoPath: product.photo_path,
+    jobId,
+    product: productHint,
+  });
   const status = await advanceJob(db, jobId, steps);
   return NextResponse.json({ status });
 }

@@ -7,13 +7,13 @@ export type JobStatus =
   | 'queued'
   | 'awaiting_approval'
   | 'downloading'
-  | 'swapping'
+  | 'generating'
   | 'processing'
   | 'ready'
   | 'failed';
 
 /** Statuses the client-side driver may advance automatically (no human input needed). */
-export const AUTO_ADVANCE_STATUSES: JobStatus[] = ['generating_face', 'queued', 'downloading', 'swapping', 'processing'];
+export const AUTO_ADVANCE_STATUSES: JobStatus[] = ['generating_face', 'queued', 'downloading', 'generating', 'processing'];
 
 export interface PipelineSteps {
   /** Generate an AI avatar from face_prompt and save it to face.jpg, returning its local path. */
@@ -22,19 +22,21 @@ export interface PipelineSteps {
   findCandidates(): Promise<Candidate[]>;
   /** Download the client-approved candidate, returning the local source path. */
   prepareSource(chosen: Candidate): Promise<string>;
-  swap(sourcePath: string): Promise<string>;
+  generate(sourcePath: string): Promise<string>;
   process(swappedPath: string): Promise<string>;
 }
+
+export type MediaType = 'video' | 'picture';
 
 export function createJob(
   db: Database.Database,
   productId: number,
-  opts: { status?: JobStatus; facePrompt?: string } = {}
+  opts: { status?: JobStatus; facePrompt?: string; mediaType?: MediaType } = {}
 ): number {
   const status = opts.status ?? 'queued';
   const info = db
-    .prepare('INSERT INTO jobs (product_id, status, face_prompt) VALUES (?, ?, ?)')
-    .run(productId, status, opts.facePrompt ?? null);
+    .prepare('INSERT INTO jobs (product_id, status, face_prompt, media_type) VALUES (?, ?, ?, ?)')
+    .run(productId, status, opts.facePrompt ?? null, opts.mediaType ?? 'video');
   return Number(info.lastInsertRowid);
 }
 
@@ -113,12 +115,12 @@ export async function advanceJob(db: Database.Database, jobId: number, steps: Pi
       if (!job.chosen_candidate_json) throw new Error('No clip selected');
       const chosen = JSON.parse(job.chosen_candidate_json) as Candidate;
       const sourcePath = await steps.prepareSource(chosen);
-      setJob(db, jobId, { status: 'swapping', source_video_path: sourcePath });
-      return 'swapping';
+      setJob(db, jobId, { status: 'generating', source_video_path: sourcePath });
+      return 'generating';
     }
-    if (status === 'swapping') {
+    if (status === 'generating') {
       if (!job.face_image_path) throw new Error('No face image uploaded for this job');
-      const swapped = await steps.swap(job.source_video_path);
+      const swapped = await steps.generate(job.source_video_path);
       setJob(db, jobId, { status: 'processing', output_path: swapped });
       return 'processing';
     }
@@ -139,11 +141,15 @@ export async function advanceJob(db: Database.Database, jobId: number, steps: Pi
     }
     return status;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (status === 'downloading') {
+    // Prefix with the failing step so terse network errors ("fetch failed")
+    // point at the right stage of the pipeline.
+    const message = `${status}: ${err instanceof Error ? err.message : String(err)}`;
+    const qualityFail = status === 'generating' && message.includes('quality check failed');
+    if (status === 'downloading' || qualityFail) {
       // Download failures are often per-clip (TikTok inconsistently blocks or
-      // omits the CDN URL for a given video) -- let the client pick a
-      // different candidate from the same list instead of dead-ending the job.
+      // omits the CDN URL for a given video), and a swap that fails QC is a
+      // clip/model mismatch -- let the client pick a different candidate from
+      // the same list instead of dead-ending the job.
       setJob(db, jobId, { status: 'awaiting_approval', chosen_candidate_json: null, error: message });
       return 'awaiting_approval';
     }

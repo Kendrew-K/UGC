@@ -16,7 +16,7 @@ const okSteps: PipelineSteps = {
   generateFace: async (_prompt: string, destPath: string) => destPath,
   findCandidates: async () => [candidate],
   prepareSource: async () => 'media/src.mp4',
-  swap: async () => 'media/swapped.mp4',
+  generate: async () => 'media/swapped.mp4',
   process: async () => 'media/final.mp4',
 };
 
@@ -35,9 +35,9 @@ describe('job pipeline', () => {
     status = await advanceJob(db, id, okSteps); // still awaiting (held for client)
     expect(status).toBe('awaiting_approval');
     expect(approveCandidate(db, id, 0)).toBe('downloading');
-    status = await advanceJob(db, id, okSteps); // downloading -> swapping
-    expect(status).toBe('swapping');
-    status = await advanceJob(db, id, okSteps); // swapping -> processing
+    status = await advanceJob(db, id, okSteps); // downloading -> generating
+    expect(status).toBe('generating');
+    status = await advanceJob(db, id, okSteps); // generating -> processing
     expect(status).toBe('processing');
     status = await advanceJob(db, id, okSteps); // processing -> ready
     expect(status).toBe('ready');
@@ -116,6 +116,23 @@ describe('job pipeline', () => {
     expect(approveCandidate(db, id, 0)).toBe('downloading');
   });
 
+  it('returns to awaiting_approval (not failed) when the swap output fails quality check, so the client can pick another clip', async () => {
+    const db = getDb(':memory:');
+    const id = seedJobWithFace(db);
+    await advanceJob(db, id, okSteps); // -> awaiting_approval
+    approveCandidate(db, id, 0); // -> downloading
+    await advanceJob(db, id, okSteps); // -> generating
+    const status = await advanceJob(db, id, {
+      ...okSteps,
+      generate: async () => { throw new Error('quality check failed: three legs in frame 2'); },
+    });
+    expect(status).toBe('awaiting_approval');
+    const row = db.prepare('SELECT status, error, chosen_candidate_json FROM jobs WHERE id = ?').get(id) as any;
+    expect(row.error).toMatch(/three legs/);
+    expect(row.chosen_candidate_json).toBeNull();
+    expect(approveCandidate(db, id, 0)).toBe('downloading');
+  });
+
   it('deletes intermediate source/swapped files once the job reaches ready', async () => {
     const db = getDb(':memory:');
     const id = seedJobWithFace(db);
@@ -127,8 +144,8 @@ describe('job pipeline', () => {
 
     await advanceJob(db, id, okSteps); // -> awaiting_approval
     approveCandidate(db, id, 0); // -> downloading
-    await advanceJob(db, id, { ...okSteps, prepareSource: async () => sourcePath }); // -> swapping
-    await advanceJob(db, id, { ...okSteps, swap: async () => swappedPath }); // -> processing
+    await advanceJob(db, id, { ...okSteps, prepareSource: async () => sourcePath }); // -> generating
+    await advanceJob(db, id, { ...okSteps, generate: async () => swappedPath }); // -> processing
     await advanceJob(db, id, { ...okSteps, process: async () => 'media/test-cleanup/final.mp4' }); // -> ready
 
     expect(fs.existsSync(sourcePath)).toBe(false);

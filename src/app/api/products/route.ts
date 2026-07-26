@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import fs from 'node:fs';
 import { getDb } from '@/lib/db';
 import { classifyProduct } from '@/lib/classifier';
 import { getMemory } from '@/lib/memory';
@@ -23,7 +24,14 @@ export async function POST(req: Request) {
         JSON.stringify(classification.keywords),
         JSON.stringify(classification.searchQueries)
       );
-    return NextResponse.json({ productId: Number(product.lastInsertRowid), classification, remembered });
+    const productId = Number(product.lastInsertRowid);
+    // Persist the photo — the pipeline dresses the avatar in this product
+    // before the swap, so it must survive past classification.
+    const photoPath = `media/products/${productId}.jpg`;
+    fs.mkdirSync('media/products', { recursive: true });
+    fs.writeFileSync(photoPath, Buffer.from(imageBase64, 'base64'));
+    db.prepare('UPDATE products SET photo_path = ? WHERE id = ?').run(photoPath, productId);
+    return NextResponse.json({ productId, classification, remembered });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[api/products] classification failed:', message);

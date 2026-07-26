@@ -13,7 +13,14 @@ const execFileAsync = promisify(execFile);
 export type Candidate = {
   url: string;
   views: number;
+  /** Clip length in whole seconds; 0/absent when the source didn't report it. */
+  durationS?: number;
+  /** Video thumbnail; lets the ranker SEE the clip (catches collages/compilations
+   * whose titles read like normal outfit clips). Signed URL, expires within hours. */
+  coverUrl?: string;
   downloadUrl: string;
+  /** Photo posts only: every image in the carousel (first one == downloadUrl). */
+  imageUrls?: string[];
   hasVoice: boolean;
   platform: 'tiktok' | 'reels';
   title?: string;
@@ -48,19 +55,42 @@ const defaultSearch: ScraperSearch = async (searchQuery) => {
   }
 };
 
+const defaultSearchPhotos: ScraperSearch = async (searchQuery) => {
+  const stdout = (await runSidecar(['search-photos', searchQuery])).trim();
+  try {
+    return JSON.parse(stdout) as Candidate[];
+  } catch {
+    throw new Error(
+      `tiktok_scraper.py returned non-JSON output for search-photos "${searchQuery}": ${stdout.slice(0, 200)}`
+    );
+  }
+};
+
 const defaultResolve: ScraperResolve = async (tiktokUrl) => {
   const destPath = `media/tmp/${randomUUID()}.mp4`;
   await runSidecar(['resolve', tiktokUrl, destPath]);
   return destPath;
 };
 
+/** Shortest clip worth face-swapping — sub-8s clips are over before the
+ * product registers (a real 4s candidate slipped through and wasted a swap). */
+const MIN_DURATION_S = 8;
+
 /**
- * Keeps only clips with at least `minViews` views and no voice-over,
- * sorted highest-views first.
+ * Keeps only clips with at least `minViews` views, no voice-over, and enough
+ * runtime to be usable, deduped by URL (multiple search queries often surface
+ * the same viral clip), sorted highest-views first.
  */
 export function filterViral(items: Candidate[], minViews = 1_000_000): Candidate[] {
-  return items
+  const seen = new Set<string>();
+  const deduped = items.filter((i) => {
+    if (seen.has(i.url)) return false;
+    seen.add(i.url);
+    return true;
+  });
+  return deduped
     .filter((i) => i.views >= minViews && i.hasVoice === false)
+    .filter((i) => (i.durationS ?? MIN_DURATION_S) >= MIN_DURATION_S)
     .sort((a, b) => b.views - a.views);
 }
 
@@ -91,11 +121,68 @@ export async function findViralVideos(
   searchQueries: string[],
   deps: { run?: (input: { searchQueries: string[] }) => Promise<Candidate[]> } = {}
 ): Promise<Candidate[]> {
-  const run =
-    deps.run ??
-    (async ({ searchQueries: queries }) => {
-      const results = await Promise.all(queries.map((q) => defaultSearch(q)));
-      return results.flat();
-    });
-  return filterViral(await run({ searchQueries }));
+  const run = deps.run ?? ((input) => searchAllQueries(input.searchQueries, defaultSearch));
+  const all = await run({ searchQueries });
+  return pickWithAdaptiveFloor(all, filterViral);
+}
+
+/**
+ * Photo counterpart of findViralVideos: viral TikTok photo-carousel posts
+ * sorted by view count descending. Photos have no soundtrack or runtime, so
+ * only the view floor and dedupe apply.
+ *
+ * @param searchQueries - TikTok search terms (e.g. ["leather jacket outfit"])
+ * @param deps.run - injectable runner for tests; defaults to the real sidecar
+ */
+export async function findViralPhotos(
+  searchQueries: string[],
+  deps: { run?: (input: { searchQueries: string[] }) => Promise<Candidate[]> } = {}
+): Promise<Candidate[]> {
+  const run = deps.run ?? ((input) => searchAllQueries(input.searchQueries, defaultSearchPhotos));
+  const all = await run({ searchQueries });
+  return pickWithAdaptiveFloor(all, filterViralPhotos);
+}
+
+/** Dedupes photo posts by URL and keeps those above `minViews`, highest first. */
+export function filterViralPhotos(items: Candidate[], minViews = 1_000_000): Candidate[] {
+  const seen = new Set<string>();
+  return items
+    .filter((i) => (seen.has(i.url) ? false : (seen.add(i.url), true)))
+    .filter((i) => i.views >= minViews)
+    .sort((a, b) => b.views - a.views);
+}
+
+// Sequential on purpose: each query spawns a full stealth browser, and
+// running several at once starves them into page-load timeouts on
+// ordinary laptops. One flaky query shouldn't sink the job either —
+// only fail if every query failed.
+async function searchAllQueries(queries: string[], search: ScraperSearch): Promise<Candidate[]> {
+  const results: Candidate[] = [];
+  let lastError: unknown;
+  let succeeded = 0;
+  for (const q of queries) {
+    try {
+      results.push(...(await search(q)));
+      succeeded++;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  if (succeeded === 0 && lastError) throw lastError;
+  return results;
+}
+
+// Prefer truly viral posts, but never starve the client of choices: many
+// niches (and TikTok's non-personalized search) rarely surface 1M+ posts,
+// so step the floor down until there are at least MIN_CHOICES options.
+function pickWithAdaptiveFloor(
+  all: Candidate[],
+  filter: (items: Candidate[], minViews: number) => Candidate[]
+): Candidate[] {
+  const MIN_CHOICES = 5;
+  for (const minViews of [1_000_000, 250_000, 50_000, 0]) {
+    const viral = filter(all, minViews);
+    if (viral.length >= MIN_CHOICES || minViews === 0) return viral;
+  }
+  return [];
 }

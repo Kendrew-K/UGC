@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/db';
+import { JOB_LABEL } from '@/lib/config';
 
 function safeMediaPath(p: string | null): string | null {
   if (!p) return null;
@@ -11,18 +12,26 @@ export default function ReadyPage() {
   const db = getDb();
   const jobs = db.prepare("SELECT * FROM jobs WHERE status = 'ready' ORDER BY updated_at DESC").all() as any[];
   return (
-    <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '800px', margin: '0 auto' }}>
-      <h1>Ready to Post</h1>
-      <a href="/" style={{ display: 'inline-block', marginBottom: '1.5rem', color: '#0070f3' }}>&larr; Back to Dashboard</a>
-      {jobs.length === 0 && <p style={{ color: '#888' }}>No finished videos yet.</p>}
+    <main className="page">
+      <div className="page-header">
+        <h1>Ready to Post</h1>
+        <a href="/" className="nav-link">&larr; Back to Dashboard</a>
+      </div>
+      {jobs.length === 0 && <p className="muted">No finished videos yet. They&rsquo;ll show up here once a job completes.</p>}
       {jobs.map((j) => {
         const safePath = safeMediaPath(j.output_path);
         if (!safePath) return null;
+        const isImage = /\.(jpe?g|png|webp)$/i.test(safePath);
         return (
-          <article key={j.id} style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ddd', borderRadius: '8px' }}>
-            <p style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>Job #{j.id}</p>
-            <video src={'/' + safePath} controls width={320} style={{ display: 'block', marginBottom: '0.5rem' }} />
-            <a href={'/' + safePath} download style={{ color: '#0070f3' }}>Download</a>
+          <article key={j.id} className="card">
+            <p style={{ fontWeight: 650, marginBottom: '0.75rem' }}>{j.name ?? `${JOB_LABEL} #${j.id}`}</p>
+            {isImage ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={'/' + safePath} alt="Finished picture" width={320} style={{ display: 'block', marginBottom: '0.75rem', borderRadius: 10 }} />
+            ) : (
+              <video src={'/' + safePath} controls width={320} style={{ display: 'block', marginBottom: '0.75rem', borderRadius: 10 }} />
+            )}
+            <a href={'/' + safePath} download className="btn btn-primary btn-sm">{isImage ? 'Download picture' : 'Download video'}</a>
           </article>
         );
       })}

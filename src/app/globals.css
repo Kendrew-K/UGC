@@ -1,6 +1,11 @@
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f6f5f2;
+  --card: #ffffff;
+  --ink: #1b1b20;
+  --muted: #70707a;
+  --line: #e6e4df;
+  --accent: #c2255c;
+  --accent-dark: #a61e4d;
   color-scheme: light;
 }
 
@@ -18,9 +23,9 @@ body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -34,4 +39,327 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+.page {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.page-header h1 {
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.nav-link {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.nav-link:hover {
+  color: var(--accent-dark);
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 2px rgba(27, 27, 32, 0.04), 0 8px 24px rgba(27, 27, 32, 0.04);
+  margin-bottom: 1.5rem;
+}
+
+.card h2 {
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin-bottom: 1rem;
+}
+
+.step-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.step-label .step-num {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 0.8rem;
+}
+.mono {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.8rem;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:not(:disabled):hover {
+  background: var(--accent-dark);
+}
+
+.btn-outline {
+  background: var(--card);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.btn-outline:not(:disabled):hover {
+  border-color: var(--ink);
+}
+.btn-outline.selected {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+.btn-ghost {
+  background: none;
+  color: var(--accent);
+  padding: 0.25rem 0.5rem;
+}
+.btn-ghost:not(:disabled):hover {
+  background: rgba(194, 37, 92, 0.08);
+}
+
+.btn-sm {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+/* ---------- forms ---------- */
+input[type='file'] {
+  font: inherit;
+  font-size: 0.875rem;
+}
+input[type='file']::file-selector-button {
+  margin-right: 0.75rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+input[type='file']::file-selector-button:hover {
+  border-color: var(--ink);
+}
+
+textarea,
+input[type='text'] {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+}
+textarea:focus,
+input[type='text']:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(194, 37, 92, 0.12);
+}
+
+/* ---------- status pills ---------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pill-gray {
+  background: #eeedea;
+  color: #55555c;
+}
+.pill-blue {
+  background: #e3effc;
+  color: #1663ad;
+}
+.pill-amber {
+  background: #fdf0dc;
+  color: #9a5b13;
+}
+.pill-violet {
+  background: #f1e8fb;
+  color: #6d3bb8;
+}
+.pill-green {
+  background: #e2f4e6;
+  color: #1f7a35;
+}
+.pill-red {
+  background: #fce4e4;
+  color: #b3261e;
+}
+
+/* ---------- job & candidate lists ---------- */
+.job-item {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.job-item + .job-item {
+  margin-top: 0.75rem;
+}
+
+.job-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.job-name {
+  font-weight: 650;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.job-name:hover {
+  color: var(--accent);
+}
+
+.candidate-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.candidate-row + .candidate-row {
+  margin-top: 0.5rem;
+}
+.candidate-row.unavailable {
+  opacity: 0.6;
+}
+
+.error-note {
+  color: #b3261e;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+/* ---------- avatar options + lightbox ---------- */
+.avatar-grid {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+.avatar-option {
+  text-align: center;
+}
+.avatar-option img {
+  width: 150px;
+  max-width: 100%;
+  border-radius: 10px;
+  display: block;
+  cursor: zoom-in;
+  border: 1px solid var(--line);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.avatar-option img:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 20px rgba(27, 27, 32, 0.15);
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 18, 22, 0.82);
+  padding: 2rem;
+  cursor: zoom-out;
+}
+.lightbox img {
+  max-width: min(92vw, 720px);
+  max-height: 78vh;
+  border-radius: 12px;
+  cursor: zoom-in;
+  transition: transform 0.2s;
+}
+.lightbox img.zoomed {
+  transform: scale(1.8);
+  cursor: zoom-out;
+}
+.lightbox-caption {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  color: #f4f2f5;
+  font-size: 0.85rem;
+  text-align: center;
+  max-width: 90vw;
+  background: rgba(20, 18, 22, 0.7);
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }
