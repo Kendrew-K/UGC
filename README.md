@@ -1,6 +1,10 @@
 # UGC Creator
 
-AI-powered UGC video generator. Upload a product photo, and the app automatically generates TikTok/Reels-ready UGC videos by classifying your product, scraping viral videos, and applying face-swap + animation techniques.
+Upload a product photo and get TikTok/Reels-ready UGC video back. The app
+classifies the product with Claude, scrapes viral clips in that category as
+creative references, generates a new video from a description of the chosen
+reference using an AI avatar wearing the product, then runs a QC and
+distinctiveness pass. Next.js app, Python scraper sidecar, local storage.
 
 ## Prerequisites
 
@@ -16,8 +20,8 @@ AI-powered UGC video generator. Upload a product photo, and the app automaticall
 ### 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
-cd ugc-creator
+git clone https://github.com/Kendrew-K/UGC.git
+cd UGC
 ```
 
 ### 2. Set Up Environment Variables
@@ -72,28 +76,41 @@ The TikTok scraper runs as a small Python sidecar. One-time setup:
 
 ## How It Works
 
+Generation-only. The viral clip is never reused as pixels, it is only read as a
+creative reference and described, then a new video is generated from that
+description with the chosen avatar as the base character. That decision is
+documented in
+[`docs/superpowers/specs/2026-07-25-remake-only-generation-design.md`](docs/superpowers/specs/2026-07-25-remake-only-generation-design.md):
+the earlier face-swap path kept leaking artifacts (mismatched clothing, garbled
+mirror reflections, extra limbs) because it reused source pixels, and it forced
+a strict source-suitability gate that threw away most viral candidates anyway.
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│ 1. Upload Product Photo                                 │
-│    └→ Browser uploads to /api/upload                    │
-├─────────────────────────────────────────────────────────┤
-│ 2. Claude Classification                                │
-│    └→ Claude analyzes product, determines category      │
-├─────────────────────────────────────────────────────────┤
-│ 3. Viral Video Scraping                                 │
-│    └→ Python sidecar (Scrapling) finds TikTok clips     │
-│       (≥1M views) in category                           │
-├─────────────────────────────────────────────────────────┤
-│ 4. Face-Swap & Animation                                │
-│    └→ WAN 2.2 animates faces into viral video footage   │
-├─────────────────────────────────────────────────────────┤
-│ 5. ffmpeg Distinctiveness Pass                          │
-│    └→ Post-processing for quality & uniqueness          │
-├─────────────────────────────────────────────────────────┤
-│ 6. Ready to Post                                        │
-│    └→ Videos appear at /ready for manual posting        │
-└─────────────────────────────────────────────────────────┘
+1. Upload product photo          src/app/api/products
+   -> Claude classifies the product and its category      src/lib/classifier.ts
+
+2. Scrape viral references       python/tiktok_scraper.py (Scrapling sidecar)
+   -> ranked by virality, filtered to industry/activity    src/lib/scraper.ts
+
+3. Client picks an avatar        src/lib/avatar.ts
+   -> generated, or supplied; dressed in the product       src/lib/tryon.ts
+
+4. Describe the reference        src/lib/describe.ts
+   -> frame-by-frame, with explicit lighting/color/texture
+
+5. Generate from the description src/lib/generate.ts
+   -> brand-new video or picture; no source pixels reused
+
+6. QC and distinctiveness pass   src/lib/qc.ts, src/lib/postprocess.ts
+   -> ffmpeg post-processing, automated quality check      src/lib/evaluator.ts
+
+7. Ready to post                 /ready
+   -> manual download and upload. Nothing posts by itself.
 ```
+
+`src/lib/pipeline.ts` assembles these into the step list for a job
+(`buildRemakeSteps` for video, `buildPictureRemakeSteps` for pictures);
+`src/lib/jobs.ts` runs them and records progress.
 
 ## Workflow
 
@@ -101,6 +118,17 @@ The TikTok scraper runs as a small Python sidecar. One-time setup:
 2. **Process**: The pipeline runs automatically—monitor progress in the UI.
 3. **Review**: Generated videos appear in the "Ready to Post" queue at `/ready`.
 4. **Post Manually**: Download and post videos to TikTok, Instagram Reels, or your platform of choice. *No automatic posting.*
+
+## Tests
+
+```bash
+npm test          # vitest, unit tests, no network
+npm run lint
+```
+
+Provider calls (fal, KIE, Anthropic) are injected, so the suite runs offline.
+`src/lib/integration.live.test.ts` is the exception: it hits real providers and
+costs credits, so it is opt-in and not part of `npm test`.
 
 ## Storage
 
@@ -125,6 +153,11 @@ All media files and database records are stored locally in the `media/` director
 
 **Out of memory**: If processing large batches, the service may run out of memory. Restart with `npm run dev`.
 
-## Support
+## Notes
 
-For issues or questions, refer to the inline documentation in the codebase or reach out to the development team.
+- Nothing posts automatically. Generated videos land in `/ready` for manual
+  download and upload; auto-posting is a ban risk on every platform.
+- `media/` and the Python `venv/` are gitignored. Both are recreated by the
+  setup steps and the pipeline, and together they run to hundreds of MB.
+- TikTok scraping is inherently brittle. When the page shape changes the
+  sidecar returns nothing rather than guessing, and the job stops at that step.

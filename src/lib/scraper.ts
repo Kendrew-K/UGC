@@ -152,6 +152,10 @@ export function filterViralPhotos(items: Candidate[], minViews = 1_000_000): Can
     .sort((a, b) => b.views - a.views);
 }
 
+// Spacing between queries so a job's several searches don't hit TikTok as one
+// burst (bursts are what trip its rate-throttling into empty/blocked responses).
+const QUERY_DELAY_MS = 2000;
+
 // Sequential on purpose: each query spawns a full stealth browser, and
 // running several at once starves them into page-load timeouts on
 // ordinary laptops. One flaky query shouldn't sink the job either —
@@ -160,7 +164,8 @@ async function searchAllQueries(queries: string[], search: ScraperSearch): Promi
   const results: Candidate[] = [];
   let lastError: unknown;
   let succeeded = 0;
-  for (const q of queries) {
+  for (const [i, q] of queries.entries()) {
+    if (i > 0) await new Promise((r) => setTimeout(r, QUERY_DELAY_MS));
     try {
       results.push(...(await search(q)));
       succeeded++;

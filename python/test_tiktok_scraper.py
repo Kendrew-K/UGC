@@ -1,6 +1,11 @@
 # python/test_tiktok_scraper.py
 import unittest
-from tiktok_scraper import extract_universal_data, parse_search_api_response, parse_video_detail
+from tiktok_scraper import (
+    extract_universal_data,
+    parse_search_api_response,
+    parse_search_photos_response,
+    parse_video_detail,
+)
 
 # Shape confirmed against live TikTok on 2026-07-03: /api/search/general/full/
 # returns {"data": [{"type": 1, "item": {...}}, ...], ...}.
@@ -12,7 +17,7 @@ SEARCH_API_RESPONSE = {
                 'id': '123',
                 'desc': 'cool jacket #fit',
                 'stats': {'playCount': 5000000},
-                'video': {'playAddr': 'https://cdn.example/v1.mp4'},
+                'video': {'playAddr': 'https://cdn.example/v1.mp4', 'bitrateInfo': [{}]},
                 'music': {'original': False},
                 'challenges': [{'title': 'fit'}],
                 'author': {'uniqueId': 'someuser'},
@@ -86,6 +91,72 @@ class TestParseSearchApiResponse(unittest.TestCase):
             'isAd': True, 'video': {}, 'stats': {}, 'music': {},
         }}]}
         self.assertEqual(parse_search_api_response(payload), [])
+
+    def test_skips_items_missing_bitrate_info(self):
+        # Confirmed live (2026-07-03): TikTok Shop / ecommerce clips
+        # (encodeUserTag 'ecom_hiddenwm_item_only') omit video.bitrateInfo
+        # entirely and always resolve to an empty playAddr later, even
+        # though isAd/downloadSetting don't flag them.
+        payload = {'data': [{'item': {
+            'id': '1', 'author': {'uniqueId': 'a', 'downloadSetting': 0},
+            'video': {'encodeUserTag': 'ecom_hiddenwm_item_only'}, 'stats': {}, 'music': {},
+        }}]}
+        self.assertEqual(parse_search_api_response(payload), [])
+
+
+PHOTO_ITEM = {
+    'id': '777',
+    'desc': 'jacket photo dump #ootd',
+    'stats': {'playCount': 2000000},
+    'author': {'uniqueId': 'photouser'},
+    'challenges': [{'title': 'ootd'}],
+    'video': {},
+    'music': {'original': True},
+    'imagePost': {
+        'cover': {'imageURL': {'urlList': ['https://cdn.example/cover.jpg']}},
+        'images': [
+            {'imageURL': {'urlList': ['https://cdn.example/img1.jpg', 'https://cdn.example/img1-alt.jpg']}},
+            {'imageURL': {'urlList': ['https://cdn.example/img2.jpg']}},
+        ],
+    },
+}
+
+
+class TestParseSearchPhotosResponse(unittest.TestCase):
+    def test_maps_photo_posts_to_candidates(self):
+        payload = {'data': [{'type': 1, 'item': PHOTO_ITEM}]}
+        candidates = parse_search_photos_response(payload)
+        self.assertEqual(len(candidates), 1)
+        c = candidates[0]
+        self.assertEqual(c['url'], 'https://www.tiktok.com/@photouser/photo/777')
+        self.assertEqual(c['views'], 2000000)
+        self.assertEqual(c['coverUrl'], 'https://cdn.example/cover.jpg')
+        self.assertEqual(c['downloadUrl'], 'https://cdn.example/img1.jpg')
+        self.assertEqual(c['imageUrls'], ['https://cdn.example/img1.jpg', 'https://cdn.example/img2.jpg'])
+        self.assertFalse(c['hasVoice'])
+        self.assertEqual(c['platform'], 'tiktok')
+        self.assertEqual(c['hashtags'], ['ootd'])
+
+    def test_skips_video_items(self):
+        payload = {'data': [{'item': {
+            'id': '1', 'author': {'uniqueId': 'a'}, 'video': {'bitrateInfo': [{}]},
+            'stats': {}, 'music': {},
+        }}]}
+        self.assertEqual(parse_search_photos_response(payload), [])
+
+    def test_skips_photo_posts_without_images(self):
+        payload = {'data': [{'item': {
+            'id': '1', 'author': {'uniqueId': 'a'}, 'imagePost': {'images': []},
+            'video': {}, 'stats': {}, 'music': {},
+        }}]}
+        self.assertEqual(parse_search_photos_response(payload), [])
+
+    def test_falls_back_to_first_image_as_cover(self):
+        item = dict(PHOTO_ITEM)
+        item['imagePost'] = {'images': PHOTO_ITEM['imagePost']['images']}
+        payload = {'data': [{'item': item}]}
+        c = parse_search_photos_response(payload)[0]
+        self.assertEqual(c['coverUrl'], 'https://cdn.example/img1.jpg')
 
 
 class TestParseVideoDetail(unittest.TestCase):

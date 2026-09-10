@@ -42,3 +42,18 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .claude/settings.local.json
+
+# python sidecar venv and bytecode
+/venv
+/.venv
+__pycache__/
+*.pyc
+
+# generated media: uploads, scraped clips, avatars, rendered output.
+# Everything here is reproducible by running the pipeline, and it is hundreds
+# of MB, so it never goes in the repo.
+/media
+
+# local run logs
+*.log
+scratch-*.log
