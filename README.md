@@ -144,6 +144,15 @@ All media files and database records are stored locally in the `media/` director
 | `BANANA_PRO_API_KEY` | No | Banana API key for video distinctiveness |
 | `SWAP_PROVIDER` | No | Which face-swap service to use (`fal` or `replicate`, default: `fal`) |
 | `PYTHON_BIN` | No | Path to Python executable for the TikTok scraper sidecar (default: `python` on PATH) |
+| `UGC_DB_PATH` | No | SQLite file for jobs, products and avatars (default: `media/app.sqlite`) |
+| `KIE_I2V_MODEL` | No | Override the image-to-video model (default: `kling-2.6/image-to-video`) |
+| `KIE_IMAGE_MODEL` | No | Override the image model for picture output (default: `google/nano-banana-edit`) |
+| `NEXT_PUBLIC_JOB_LABEL` | No | What a pipeline run is called in the UI (default: `Job`) |
+
+Test-only flags, none needed to run the app: `RUN_LIVE_TESTS`, `RUN_FACE_SRC`
+and `RUN_PRODUCT_ID` gate `src/lib/integration.live.test.ts`, which spends real
+provider credits. `E2E_JOB`, `E2E_MEDIA` and `E2E_PICK` drive
+`scripts/e2e-driver.mjs`.
 
 ## Troubleshooting
 
